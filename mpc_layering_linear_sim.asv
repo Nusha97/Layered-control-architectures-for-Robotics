@@ -13,13 +13,11 @@ sigma.kf = path;
 
 % Constraints
 
-a = zeros(4, 1);
-b = zeros(4, 1);
-
+a = zeros
 for i=1:n
-    a = [a; i*(i-1)*ones(4, 1)];
+    a = [a; i*(i-1)*zeros(4, 1)];
     if i < 4
-        b = [b; ones(4, 1)];
+        b = [b; zeros(4, 1)];
     else
         b = [b; i*(i-1)*(i-2)*(i-3)];
     end
@@ -29,13 +27,12 @@ H = a*a' + b*b';
 
 t = 1:m;
 
-for i=1:m
-    for j=1:n+1
-        f = [f; t(i)^(j-1)];
-    end
-end
 
-x = quadprog(H, [], [], [], ones(4*n*m, 1), f);
+for j=1:n+1
+    f = [f; t(i)^(j-1)]
+    
+
+x = quadprog(H, 0);
 
 % Centralized Linearized dynamics 
 g = 9.80;
@@ -82,9 +79,6 @@ end
 
 % MPC reference tracking with state and input constraints
 
-
-%% Assuming differential flatness
-
 % Decentralized linearized control
 % X-subsystem
 % The state variables are x, dot_x, pitch, dot_pitch
@@ -118,12 +112,5 @@ Ayaw = [0.0, 1.0;
         0.0, 0.0];
 Byaw = [0.0;
         1 / Iz];
-    
-% LQR reference tracking using error dynamics
-
-E1 = ;
-E2 = ;
-Atilde = [Ax; Ax*E1' - E2]% Augmented state zi = [ei; \Bar{ri}]'
-    
 % Reference signal 
 

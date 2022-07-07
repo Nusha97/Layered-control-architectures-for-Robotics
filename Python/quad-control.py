@@ -112,7 +112,6 @@ air = 1.0  # set to 1 to activate air model, otherwise set to 0
 
 # equilibrium state
 
-
 # X  axis dynamics
 Ax = np.matrix(
 	[[0.0,1.0,0.0,0.0],
@@ -431,10 +430,4 @@ errors.set_xlabel("time {s}")
 errors.set_ylabel(" Position {m}")
 errors.legend(loc='lower right', shadow=True, fontsize='small')
 
-
-
-
-
-
-
-plt.show(
+plt.show()
