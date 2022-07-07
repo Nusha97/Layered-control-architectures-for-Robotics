@@ -25,17 +25,18 @@ for i=1:n
     end
 end
 
-H = a*a' + b*b';
+H = a'*a + b'*b;
 
 t = 1:m;
 
+f = [];
 for i=1:m
     for j=1:n+1
-        f = [f; t(i)^(j-1)];
+        f = [f; ones(4, 1)*t(i)^(j-1)];
     end
 end
 
-x = quadprog(H, [], [], [], ones(4*n*m, 1), f);
+opt = quadprog(H, [], [], [], blkdiag(ones(4*(n+1)*m, 1)), f);
 
 % Centralized Linearized dynamics 
 g = 9.80;
@@ -121,9 +122,9 @@ Byaw = [0.0;
     
 % LQR reference tracking using error dynamics
 
-E1 = ;
-E2 = ;
-Atilde = [Ax; Ax*E1' - E2]% Augmented state zi = [ei; \Bar{ri}]'
+% E1 = ;
+% E2 = ;
+% Atilde = [Ax Ax*E1' - E2; zeros() Z]% Augmented state zi = [ei; \Bar{ri}]'
     
 % Reference signal 
 
