@@ -1,8 +1,7 @@
 %% Layered architecture for quadrotor control
 
 % Planning with minimum snap 
-
-m = 7; % number of waypoints
+[m, k] = size(path); % number of waypoints
 n = 5; % order of polynomial
 sigma = {};
 sigma.x = zeros(m, n);
@@ -13,30 +12,79 @@ sigma.kf = path;
 
 % Constraints
 
-a = zeros(4, 1);
-b = zeros(4, 1);
-
-for i=1:n
-    a = [a; i*(i-1)*ones(4, 1)];
-    if i < 4
-        b = [b; ones(4, 1)];
-    else
-        b = [b; i*(i-1)*(i-2)*(i-3)];
-    end
-end
-
-H = a'*a + b'*b;
-
 t = 1:m;
 
-f = [];
+% Values at the keyframes/waypoints are equal to the generated polynomial
+% A1 = zeros(m, 4*(n+1)*m);
+A1 = [];
 for i=1:m
-    for j=1:n+1
-        f = [f; ones(4, 1)*t(i)^(j-1)];
-    end
+    A1 = [A1; zeros(4, 4*(n+1)*(i-1)) reptimeseq(t(i), n) zeros(4, 4*(n+1)*(m-i))];
 end
 
-opt = quadprog(H, [], [], [], blkdiag(ones(4*(n+1)*m, 1)), f);
+% Continuity at the keyframes/waypoints
+% A2 = zeros(m-1, 4*(n+1)*m);
+A2 = [];
+for i=2:m
+    A2 = [A2; zeros(4, 4*(n+1)*(i-2)) reptimeseq(t(i), n) -reptimeseq(t(i), n) zeros(4, 4*(n+1)*(m-i))];
+end
+
+% Derivatives at the end points are 0 (zero velocity, acc, jerk at 0, m)
+% A3 = zeros(2, 4*(n+1)*m);
+A3 = [];
+A3 = [A3; derivtimeseq(1, n) zeros(4, 4*(n+1)*(m-1))];
+A3 = [A3; zeros(4, 4*(n+1)*(m-1)) derivtimeseq(m, n)];
+
+
+Aeq = [A1; A2; A3];
+beq = reshape([path zeros(m, 1)], [4*m, 1]);
+beq = [beq; beq(5:end); beq(1:4); beq(21:end)]; 
+% beq = [beq; beq(2:end); beq(1); beq(m)];
+
+% Objective function
+
+% H1 = zeros(m, 3*(n+1)*m);
+H1 = [];
+for i=1:m
+    H1 = [H1; zeros(3, 3*(n+1)*(i-1)) snapcomp(t(i), t(i)-1, n) zeros(3, 3*(n+1)*(m-i))]; % Fix the indices for t
+end
+H1(isnan(H1)) = 0; % check why there are nan values
+
+% H2 = zeros(m, (n+1)*m);
+H2 = [];
+for i=1:m
+    H2 = [H2; zeros(1, (n+1)*(i-1)), yawacc(t(i), t(i)-1, n), zeros(1, (n+1)*(m-i))];
+end
+
+H = [H1'*H1 zeros(3*(n+1)*m, (n+1)*m); zeros((n+1)*m, 3*(n+1)*m) H2'*H2];
+
+% a = zeros(4, 1);
+% b = zeros(4, 1);
+% 
+% for i=1:n
+%     a = [a; i*(i-1)*ones(4, 1)];
+%     if i < 4
+%         b = [b; zeros(4, 1)];
+%     else
+%         b = [b; i*(i-1)*(i-2)*(i-3)*ones(4, 1)];
+%     end
+% end
+% 
+% H = a'*a + b'*b;
+% 
+% f = [];
+% for i=1:m
+%     for j=1:n+1
+%         f = [f; ones(4, 1)*t(i)^(j-1)];
+%     end
+% end
+
+opt = quadprog(H, [], [], [], Aeq, beq);
+
+tsim = 1:1/(n+1):m;
+% Reference trajectories
+for i=1:m
+    
+end
 
 % Centralized Linearized dynamics 
 g = 9.80;
