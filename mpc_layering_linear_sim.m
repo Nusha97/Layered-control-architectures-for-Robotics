@@ -191,7 +191,22 @@ Byaw = [0.0;
     
 % LQR reference tracking using error dynamics ei = xi - ri
 
-finite_horizon_dlqr_quad(Ax, Bx, [sigma.x zeros(1, size(sigma.x, 2)) zeros(1, size(sigma.x, 2)) zeros(1, size(sigma.x, 2))])
+[Kx, Px] = finite_horizon_dlqr_quad(Ax, Bx, sigma.x); %[sigma.x zeros(1, size(sigma.x, 2)) zeros(1, size(sigma.x, 2)) zeros(1, size(sigma.x, 2))]);
+
+[Ky, Py] = finite_horizon_dlqr_quad(Ay, By, sigma.y);
+
+[Kz, Pz] = finite_horizon_dlqr_quad(Az, Bz, sigma.z);
+
+[Ksi, Psi] = finite_horizon_dlqr_quad(Ayaw, Byaw, sigma.si);
+
+% Control law u = -Kx
+% x0 = [];
+% x = [];
+% for i=1:Nsim
+%     u = K()*z;
+%     Ax*x + Bx*u
+% end
+
 Qx = 1e-4*eye(55);
 Qx(1, 1) = 1;
 % Qx(2, 2) = 0;
@@ -217,20 +232,20 @@ Atilde = [Ax Ax*E1' - E2'; zeros(N+1, 4) Z]; % Augmented state zi = [ei; \Bar{ri
 Btilde = [Bx; zeros(N+1, 4)];
 
 
-% Check stabilizability
-lambdaA = eig(Atilde);
-
-for i=1:size(lambdaA)
-    abs(lambdaA(i))
-end
-
-% Check detectability
-
-[K, S, e] = dlqr(Atilde, Btilde, Qx, Rx, zeros(55, 4));
+% % Check stabilizability
+% lambdaA = eig(Atilde);
+% 
+% for i=1:size(lambdaA)
+%     abs(lambdaA(i))
+% end
+% 
+% % Check detectability
+% 
+% [K, S, e] = dlqr(Atilde, Btilde, Qx, Rx, zeros(55, 4));
 % Px = idare(Atilde, Btilde, Qx, Rx, [], []);
 % % Px = dlyap
 % u = lqr(Atilde, Btilde, Qx, Rx, Px, 10, zeros(4, 1));
 
     
-% Reference signal 
+
 

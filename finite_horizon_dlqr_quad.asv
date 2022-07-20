@@ -6,11 +6,13 @@ H = floor(N)+1;
 t = 1:N;
 
 %tracking penalty weight
-rho = 0.01;
+rho = 0.0001;
 
 %augmented state space to do reference tracking
 n = size(A,1);
 p = size(B,2);
+
+% Z = diag(ones(H-1,1),1);
 
 e1 = zeros(n*H,n);
 e2 = zeros(n*H,n);
@@ -69,8 +71,8 @@ end
 % rp(1,:) == rp(2,:);
 % rp(2,:) == rp(4,:);
 % rp(4,:) == 0;
-% -pi/5 <= rp(3,:) <= pi/5;
-% -pi/5 <= rp(4,:) <= pi/5;
+-pi/5 <= rp(3,:) <= pi/5;
+-pi/5 <= rp(4,:) <= pi/5;
 cvx_end
  
 closed_form_cost = func_util + tracking_penalty;
@@ -90,7 +92,7 @@ end
 
 figure();
 plot(1:N,z(1,1:N),'b-',1:N,rp(1,1:N),'k:',1:N,v(1,1:N),'g-','LineWidth',4)
-legend('linear state','reference','min snap ref');
+legend('linear state x1(1)','reference r1(1)','ideal trajectory v');
 title(sprintf('rho = %0.2f',rho));
 set(gca,'FontSize',16,'fontWeight','bold')
 set(findall(gcf,'type','text'),'FontSize',16,'fontWeight','bold')
