@@ -26,7 +26,7 @@ VERSION
 """
 
 from __future__ import print_function, division
-import quadrocoptertrajectory as quadtraj
+import quadrotortrajectorygen as quadtraj
 
 # Define the trajectory starting state:
 pos0 = [0, 0, 2]  # position
@@ -56,7 +56,7 @@ traj.set_goal_velocity(velf)
 traj.set_goal_acceleration(accf)
 
 # Note: if you'd like to leave some states free, there are two options to
-# encode this. As exmample, we will be leaving the velocity in `x` (axis 0)
+# encode this. As an example, we will be leaving the velocity in `x` (axis 0)
 # free:
 #
 # Option 1:
