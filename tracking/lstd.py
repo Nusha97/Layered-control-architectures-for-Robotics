@@ -11,6 +11,7 @@
 PI_TOL = 1e-3
 
 import numpy as np
+from tqdm import tqdm
 
 def _svec(X):
     ''' Symmetric vectorization: convert a symmetric matrix X compactly into a
@@ -47,7 +48,7 @@ def _smat(x):
     X = triu + triu.T + diagonal
     return X
 
-def featurize(x, u, K, gamma):
+def featurize(x, u, K, gamma, sigma=1):
     ''' Featurize the state and control action.
     Input:
         - x:        np.array(p), states
@@ -61,9 +62,9 @@ def featurize(x, u, K, gamma):
     eta = gamma / (1-gamma)
     xu = np.concatenate([x, u])
     IK = np.vstack([np.eye(K.shape[1]), K])
-    return _svec(np.outer(xu, xu) + eta * IK @ IK.T)
+    return _svec(np.outer(xu, xu) + sigma ** 2 * eta * IK @ IK.T)
 
-def lspi(traj, gamma, K0=None, max_iter=100):
+def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
     ''' Least squares policy iteration for finding optimal LQR policy
     Input:
         - traj:         List of 4 tuples (x_k, u_k, r_k, x_{k+1})
@@ -81,8 +82,9 @@ def lspi(traj, gamma, K0=None, max_iter=100):
     else:
         K = K0.copy()
     # Policy iteration until convergence
-    for _ in range(max_iter):
-        P = evaluate(traj, K, gamma)
+    iter_range = tqdm(range(max_iter)) if show_progress else range(max_iter)
+    for _ in iter_range:
+        P, _ = evaluate(traj, K, gamma, sigma)
         P12 = P[:p, p:]
         P22 = P[p:, p:]
         K_ = -np.linalg.pinv(P22) @ P12.T
@@ -94,24 +96,27 @@ def lspi(traj, gamma, K0=None, max_iter=100):
     P_state = IK.T @ P @ IK
     return K, P_state
 
-def evaluate(traj, K, gamma):
+def evaluate(traj, K, gamma, sigma=1):
     ''' Evaluate a given controller K based on the collected data.
     Input:
         - traj:     List of 4 tuples (x_k, u_k, r_k, x_{k+1})
         - K:        np.array(q, p), controller
         - gamma:    Float, discount factor
     Output:
-        - P:        State-action value matrix
+        - Pxu_hat:  State-action value matrix
+        - Px_hat:   State value matrix
     '''
     # Find the features of points on the trajectory
-    phi_xu = np.array([featurize(x, u, K, gamma) for (x, u, _, _) in traj])
-    phi_xx = np.array([featurize(x_, K @ x_, K, gamma) \
+    phi_xu = np.array([featurize(x, u, K, gamma, sigma) for (x, u, _, _) in traj])
+    phi_xx = np.array([featurize(x_, K @ x_, K, gamma, sigma) \
                         for (_, _, _, x_) in traj])
     # Evaluate the policy
     A = np.einsum('ij,ik', phi_xu, (phi_xu-gamma*phi_xx))
     b = np.sum( np.array([r for (_,_,r,_) in traj])[:,None] * phi_xu, 0)
-    p_hat = np.linalg.pinv(A) @ b
-    return _smat(p_hat)
+    Pxu_hat = _smat(np.linalg.pinv(A) @ b)
+    IK = np.vstack([np.eye(K.shape[1]), K])
+    Px_hat = IK.T @ Pxu_hat @ IK
+    return Pxu_hat, Px_hat
 
 def construct_traj_list(xtrajs, utrajs, rtrajs):
     ''' Convert a list of trajectories into the form that is taken by the
@@ -123,3 +128,11 @@ def construct_traj_list(xtrajs, utrajs, rtrajs):
         traj += list(zip(xtraj[:T], utraj, rtraj, xtraj[1:]))
     return traj
 
+def nominal_to_tracking(A, B, Q, R, T):
+    p, q = B.shape
+    Z = np.eye(p*T, k=p)
+    zero = np.zeros((p, p*T))
+    Atilde = np.block([[A, zero],[zero.T, Z]])
+    Btilde = np.vstack([B, np.zeros((p*T, q))])
+    E = np.hstack([np.eye(p), -np.eye(p), np.zeros((p, p*(T-1)))])
+    return Atilde, Btilde, E.T @ Q @ E, R

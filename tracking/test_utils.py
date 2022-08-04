@@ -48,12 +48,20 @@ def linear_feedback_controller(K):
     '''
     return lambda x: np.dot(K, x)
 
-def sample_traj(A, B, Q, R, ctrl, T, x0=None):
+class TVcontroller():
+    def __init__(self, K):
+        self.K = K
+
+    def ctrl(self, x):
+        K = self.K.pop()
+        return K @ x
+
+def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
     ''' Given an environment, sample a trajectory of T time steps
     Input:
         - A, B:     dynamics of the system
-        - K:        controller
         - Q, R:     cost structure
+        - ctrl:        controller
         - T:        length of trajectory
         - x0:       initial state. If None, it will be sampled at random
     Return:
@@ -76,10 +84,36 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None):
     xtraj[0] = x
     for t in range(T):
         u = ctrl(x)
-        x_ = A @ x + B @ u
+        x_ = A @ x + B @ u + sigma * np.random.randn(p)
         r = np.dot(Q @ x, x) + np.dot(R @ u, u)
         utraj[t] = u
         rtraj[t] = r
         xtraj[t+1] = x_
         x = x_
     return xtraj, utraj, rtraj
+
+def sample_ref_traj(p, T, order=4):
+    # TODO: move this into a tracking_utils.py file since it's a shared
+    # functionality for all tracking controllers
+    # TODO: sample random trajectories with given start and goal points
+    ''' Samples a reference trajectory to track. Does so by randomly sampling a
+    polynomial and evaluating at points evenly spread on the unit interval.
+    '''
+    coeffs = np.random.randn(p, order)
+    coeffs = coeffs / coeffs.sum(1)[:, None]
+    points = np.array([np.linspace(0,1,T) ** (i+1) for i in range(order)])
+    return coeffs @ points
+
+def lqr_vi(A, B, Q, R, T, gamma=1):
+    ''' Solves lqr for a finite time horizon
+    '''
+    P = Q
+    K = [-np.linalg.pinv(R + B.T @ P @ B) @ B.T @ P @ A]
+    for t in range(T-1):
+        P = Q + K[0].T @ R @ K[0] + gamma * (A + B@K[0]).T @ P @ (A + B@K[0])
+        K = [-np.linalg.pinv(R + B.T @ P @ B) @ B.T @ P @ A] + K
+    return P, K
+
+def relerr(A, Ahat):
+    ''' computes relative error of two matrices in terms of frobenius norm '''
+    return np.linalg.norm(A-Ahat, 'fro') / np.linalg.norm(A, 'fro')
