@@ -60,10 +60,18 @@ def min_jerk(waypoints, t, n, num_steps, P=None, rho=1):
         #TODO: something that needs to be fixed for higher-dimensional sys
         P12 = P[0,1:]
         P22 = P[1:,1:]
-        penalty = rho * (cp.quad_form(ref, P22) + 2*waypoints[0] * P12@ref)
-        objective = objective + cp.square(penalty)
+        penalty = cp.quad_form(ref, P22) + 2*waypoints[0] * P12@ref +\
+                P[0,0] * waypoints[0] ** 2
+        objective = objective + rho * penalty
     # Solve
     prob = cp.Problem(cp.Minimize(objective), constr)
-    prob.solve(solver=cp.SCS)
-    print(prob.status)
-    return coeff.value, ref.value
+    prob.solve(verbose=False)
+    if prob.status != cp.OPTIMAL:
+        print('Failed to generate trajectory')
+        return None
+    # Construct return value
+    if P is not None:
+        tracking_cost = penalty.value
+    else:
+        tracking_cost = None
+    return coeff.value, ref.value, tracking_cost

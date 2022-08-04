@@ -57,7 +57,7 @@ class TVcontroller():
         self.K = K
 
     def ctrl(self, x):
-        K = self.K.pop()
+        K = self.K.pop(0)
         return K @ x
 
 def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):

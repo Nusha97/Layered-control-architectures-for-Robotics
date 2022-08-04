@@ -130,10 +130,13 @@ def construct_traj_list(xtrajs, utrajs, rtrajs):
     return traj
 
 def nominal_to_tracking(A, B, Q, R, T):
+    """ Really weird but to making tracking work correctly we need an augmented
+    state of p*(T+2)
+    """
     p, q = B.shape
-    Z = np.eye(p*T, k=p)
-    zero = np.zeros((p, p*T))
+    Z = np.eye(p*(T+1), k=p)
+    zero = np.zeros((p, p*T+p))
     Atilde = np.block([[A, zero],[zero.T, Z]])
-    Btilde = np.vstack([B, np.zeros((p*T, q))])
-    E = np.hstack([np.eye(p), -np.eye(p), np.zeros((p, p*(T-1)))])
+    Btilde = np.vstack([B, np.zeros((p*(T+1), q))])
+    E = np.hstack([np.eye(p), -np.eye(p), np.zeros((p, p*T))])
     return Atilde, Btilde, E.T @ Q @ E, R
