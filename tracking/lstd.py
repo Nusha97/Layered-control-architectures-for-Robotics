@@ -13,13 +13,14 @@ PI_TOL = 1e-3
 import numpy as np
 from tqdm import tqdm
 
+
 def _svec(X):
-    ''' Symmetric vectorization: convert a symmetric matrix X compactly into a
+    """ Symmetric vectorization: convert a symmetric matrix X compactly into a
     vector x in a way that
                             <X, X> = <x, x>
     Input:      - X:        np.array(N,N), Symmetric matrix X
     Return:     - x:        np.array(N*(N+1)/2), X vectorized
-    '''
+    """
     # Check that X is symmetric
     assert len(X.shape) == 2 and X.shape[0] == X.shape[1]
     assert np.allclose(X, X.T)
@@ -32,10 +33,10 @@ def _svec(X):
 
 
 def _smat(x):
-    ''' The inverse of _svec(). See _svec() above.
+    """ The inverse of _svec(). See _svec() above.
     Input:      - x:        np.array(k), vector x
     Return:     - X:        np.array(N,N), x converted into matrix
-    '''
+    """
     # Check that dimension is valid
     assert len(x.shape) == 1
     N = int((np.sqrt(1+8*len(x))-1) / 2)
@@ -49,7 +50,7 @@ def _smat(x):
     return X
 
 def featurize(x, u, K, gamma, sigma=1):
-    ''' Featurize the state and control action.
+    """ Featurize the state and control action.
     Input:
         - x:        np.array(p), states
         - u:        np.array(q), control actions
@@ -58,14 +59,14 @@ def featurize(x, u, K, gamma, sigma=1):
     Output:
         - phi:      np.array(f), the feature phi(x, u) as defined in the
                     paper
-    '''
+    """
     eta = gamma / (1-gamma)
     xu = np.concatenate([x, u])
     IK = np.vstack([np.eye(K.shape[1]), K])
     return _svec(np.outer(xu, xu) + sigma ** 2 * eta * IK @ IK.T)
 
 def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
-    ''' Least squares policy iteration for finding optimal LQR policy
+    """ Least squares policy iteration for finding optimal LQR policy
     Input:
         - traj:         List of 4 tuples (x_k, u_k, r_k, x_{k+1})
         - gamma:        discount factor
@@ -73,7 +74,7 @@ def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
         - max_iter:     maximum number of iterations
     Output:
         - K:            learned controller
-    '''
+    """
     # Initialize controller
     p = len(traj[0][0])
     q = len(traj[0][1])
@@ -97,7 +98,7 @@ def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
     return K, P_state
 
 def evaluate(traj, K, gamma, sigma=1):
-    ''' Evaluate a given controller K based on the collected data.
+    """ Evaluate a given controller K based on the collected data.
     Input:
         - traj:     List of 4 tuples (x_k, u_k, r_k, x_{k+1})
         - K:        np.array(q, p), controller
@@ -105,7 +106,7 @@ def evaluate(traj, K, gamma, sigma=1):
     Output:
         - Pxu_hat:  State-action value matrix
         - Px_hat:   State value matrix
-    '''
+    """
     # Find the features of points on the trajectory
     phi_xu = np.array([featurize(x, u, K, gamma, sigma) for (x, u, _, _) in traj])
     phi_xx = np.array([featurize(x_, K @ x_, K, gamma, sigma) \
@@ -119,9 +120,9 @@ def evaluate(traj, K, gamma, sigma=1):
     return Pxu_hat, Px_hat
 
 def construct_traj_list(xtrajs, utrajs, rtrajs):
-    ''' Convert a list of trajectories into the form that is taken by the
+    """ Convert a list of trajectories into the form that is taken by the
     evaluate method.
-    '''
+    """
     traj = []
     for xtraj, utraj, rtraj in zip(xtrajs, utrajs, rtrajs):
         T = utraj.shape[0]
