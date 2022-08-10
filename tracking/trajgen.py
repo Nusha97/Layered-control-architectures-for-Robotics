@@ -10,13 +10,51 @@ def diff_coeff(n, t, dx_order):
     mult = np.exp(multln)
     return np.concatenate([np.zeros(dx_order), t_powers * mult])
 
-def jerk_coeff(n, t1, t2):
-    mult = (np.arange(n-3)+3) * (np.arange(n-3)+2)
-    t1_powers = t1 ** (np.arange(n-3)+1)
-    t2_powers = t2 ** (np.arange(n-3)+1)
-    return np.concatenate([np.zeros(3), mult*(t2_powers - t1_powers)])
+def _facln(n, i):
+    ''' Helper function that computes ln( n*(n-i)*...*(n-i+1) ) '''
+    return np.log(n - np.arange(i)).sum()
 
-def min_jerk(waypoints, t, n, num_steps, P=None, rho=1):
+def cost_matrix(n, k, T):
+    ''' Return the quadratic cost matrix corresponds to the cost function
+            \int_0^T (\frac{\partial^k x}{\partial t^k})^2 dt
+    Input:
+        - n: degree of the polynomial
+        - k: order of derivative that we integrate over
+    Return:
+        - H: cost matrix
+    '''
+    H = np.zeros((n+1, n+1))
+    for i in range(n-k+1):
+        for j in range(n-k+1):
+            power = 2*n-2*k-i-j+1
+            Hij_ln = _facln(n-i, k) + _facln(n-j, k) - np.log(power)
+            H[i,j] = np.exp(Hij_ln + np.log(T) * power)
+    return H
+
+def continuity_constr(n, order, coeff1, coeff2, waypoint, T1):
+    ''' Return a list of continuity constraints enforced at p_1(T1) and p_2(0).
+    In addition, enforce coeff
+    Input:
+        - n:        Integer, order of the polynomial
+        - order:    Integer, order of continuity enforced
+        - coeff1:   cp.Variable, coefficients of polynomial p_1
+        - coeff2:   cp.Variable, coefficients of polynomial p_2
+    Return:
+        - constr:   list of cp.Constraint
+    '''
+    pass
+
+def boundary_cond(n, coeff, bcs, T):
+    ''' Return a list of bc constraints enforced at p(T)
+    Input:
+        - n:        Integer, order of polynomial
+        - coeff:    coefficients of the polynomial p(t)
+        - bcs:      list of boundary condition values, ordered as
+                    [p(0), p'(0), p''(0), ...]
+    '''
+    pass
+
+def min_jerk(waypoints, t, n, num_steps, P=None, rho=1, threshold=10):
     ''' Generate min jerk trajectory with regularization P
     '''
 
@@ -63,12 +101,17 @@ def min_jerk(waypoints, t, n, num_steps, P=None, rho=1):
         penalty = cp.quad_form(ref, P22) + 2*waypoints[0] * P12@ref +\
                 P[0,0] * waypoints[0] ** 2
         objective = objective + rho * penalty
+        #constr += [objective <= threshold]
     # Solve
     prob = cp.Problem(cp.Minimize(objective), constr)
+    #prob = cp.Problem(cp.Minimize(penalty), constr)
     prob.solve(verbose=False)
+    print(coeff.value)
+    #print('threshold on jerk is {:6.3f},\t jerk is {:6.3f},\t penalty is {:2.3f}'.format(threshold, objective.value, penalty.value))
     if prob.status != cp.OPTIMAL:
         print('Failed to generate trajectory')
         return None
+    print('jerk: {:6.3f},\t penalty:{:6.3f}'.format(objective.value-rho*penalty.value, penalty.value))
     # Construct return value
     if P is not None:
         tracking_cost = penalty.value

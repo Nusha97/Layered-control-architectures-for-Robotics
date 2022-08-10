@@ -135,6 +135,7 @@ def nominal_to_tracking(A, B, Q, R, T):
     """
     p, q = B.shape
     Z = np.eye(p*(T+1), k=p)
+    #Z[-p:] = np.eye(p*(T+1))[-p:]
     zero = np.zeros((p, p*T+p))
     Atilde = np.block([[A, zero],[zero.T, Z]])
     Btilde = np.vstack([B, np.zeros((p*(T+1), q))])
