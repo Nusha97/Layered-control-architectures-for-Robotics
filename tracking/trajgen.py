@@ -79,7 +79,7 @@ def _boundary_cond(n, coeff, bcs, T):
     constr = [_diff_coeff(n, T, i) @ coeff == bc for i, bc in enumerate(bcs)]
     return constr
 
-def min_jerk_setup(waypoints, ts, n, num_steps):
+def min_jerk_1d(waypoints, ts, n, num_steps):
     ''' Generate the min-jerk trajectory
     Input:
         - waypoints:    list of 1d waypoints
@@ -120,19 +120,32 @@ def min_jerk_setup(waypoints, ts, n, num_steps):
         ]
     return objective, constr, ref, coeff
 
+def min_jerk_setup(waypoints, ts, n, p, num_steps):
+    ''' Sets up the min jerk problem by calling the 1d helper function '''
+    objective, constrs, refs, coeffs = 0, [], [], []
+    # Generate the variables and constraints for each dimension
+    for i in range(p):
+        o, c, r, co = min_jerk_1d([w[i] for w in waypoints], ts, n, num_steps)
+        objective += o
+        constrs += c
+        refs.append(r)
+        coeffs.append(co)
+    # Stitch them into global reference trajectory
+    ref = cp.vstack(refs).flatten()
+    return objective, constrs, ref, coeffs
 
-def generate(waypoints, ts, n, num_steps, P, rho, task='min-jerk'):
+
+def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
     ''' Wrapper for generating trajectory. For now only takes quadratic
     regularization.
     Return:
         ref:        reference trajectory
     '''
-    objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, num_steps)
-    # TODO: make this work for high dimensional sys
-    P12 = P[0,1:]
-    P22 = P[1:,1:]
-    penalty = cp.quad_form(ref, P22) + 2*waypoints[0] * P12@ref +\
-            P[0,0] * waypoints[0] ** 2
+    objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, p, num_steps)
+    P12 = P[0:p,p:]
+    P22 = P[p:,p:]
+    x0 = np.array(waypoints[0])
+    penalty = cp.quad_form(ref, P22) + 2 * x0 @ (P12@ref)
     prob = cp.Problem(cp.Minimize(objective + rho * penalty), constr)
     prob.solve()
     if prob.status != cp.OPTIMAL:
