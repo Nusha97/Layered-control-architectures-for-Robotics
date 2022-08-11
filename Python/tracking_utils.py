@@ -2,6 +2,7 @@ import numpy as np
 import quadrotortrajectorygen as qt
 from test_utils import *
 
+
 # Decentralized linearized control
 # X-subsystem
 # The state variables are x, dot_x, pitch, dot_pitch
@@ -46,12 +47,34 @@ Ayaw = np.array([[0.0, 1.0],
 Byaw = np.array([[0.0],
         [1 / Iz]])
 
+
+## Centralized Linearized dynamics
+
+A = np.zeros([12, 12])
+A[1, 2] = 1
+A[2, 9] = g
+A[3, 4] = 1
+A[4, 7] = -g
+A[5, 6] = 1
+A[7, 8] = 1
+A[9, 10] = 1
+A[11, 12] = 1
+
+B = np.zeros([12, 4])
+B[6, 1] = 1 / m
+B[8, 2] = 1 / Ix
+B[10, 3] = 1 / Iy
+B[12, 4] = 1 / Iz
+
+
 def compute_reward():
     """
     Function to compute the reward at each time step for the trajectory
     :return:
     """
 
+
+def
 
 
 def compute_xtraj_motion_prim(traj, Tf):
