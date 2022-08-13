@@ -6,7 +6,7 @@ H = floor(N)+1;
 t = 1:N;
 
 %tracking penalty weight
-rho = 0.01;
+rho = 0.5;
 
 %augmented state space to do reference tracking
 n = size(A,1);
@@ -34,12 +34,12 @@ bB = [B;zeros(n*H,p)];
 %Riccati recursion.  Here Q = tracking error penalty, R is control penalty
 M{N+1} = rho*blkdiag(eye(n),zeros(n*H,n*H));
 Q = M{N+1};
-R = .0001*eye(p);
+R = 1000*eye(p);
 for k = N:-1:1
     M{k} = Q + bA'*M{k+1}*bA - bA'*M{k+1}*bB*inv(R+bB'*M{k+1}*bB)*bB'*M{k+1}*bA;
     F{k} =  inv(R+bB'*M{k+1}*bB)*bB'*M{k+1}*bA;
 end
-R = .0001;
+% R = 1;
 
 
 %% closed form, only optimize over reference trajectory
@@ -58,11 +58,11 @@ func_util = norm(rp(1,1:N)-v(1,1:N),1);
 tracking_penalty = x0'*M{1}*x0;
 minimize(func_util + tracking_penalty);
 subject to
-%reference constraints
- %virtual dynamics: let's make r(1,:) behave like a single integrator being
-%driven by r(2,:), and the rest is free
+% reference constraints
+%  virtual dynamics: let's make r(1,:) behave like a single integrator being
+% driven by r(2,:), and the rest is free
 for k = 1:N
-    rp(1,k+1) == rp(1,k)+rp(2,k);
+    rp(1,k+1) == rp(1,k)+5*rp(2,k);
 end
 %reference constraints
 %and let's constrain our virtual velocity
@@ -89,12 +89,13 @@ for k = 1:N
 end
 
 figure();
-plot(1:N,z(1,1:N),'b-',1:N,rp(1,1:N),'k:',1:N,v(1,1:N),'g-','LineWidth',4)
+plot(1:N,z(1,1:N),'b-',1:N,rp(1,1:N),'g-',1:N,v(1,1:N),'r--','LineWidth',1)
 legend('linear state','reference','min snap ref');
 title(sprintf('rho = %0.2f',rho));
 set(gca,'FontSize',16,'fontWeight','bold')
 set(findall(gcf,'type','text'),'FontSize',16,'fontWeight','bold')
-
+xlabel("time");
+ylabel("state");
 
 %% Pendulum parameters
 % M = 2;

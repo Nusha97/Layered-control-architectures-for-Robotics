@@ -14,9 +14,9 @@ sigma.kf = path; % keyframes/waypoints
 
 % Constraints
 
-t = 1e-8:1/(m-1):1.01;
+t = 0.001:1/(m-1):1.01;
 
-% Values at the keyframes/waypoints are equal to the generated polynomial
+% Values at the keyframes/waypoints are equal to generated polynomial
 % A1 = zeros(m, 4*(n+1)*m);
 A1 = [];
 for i=1:m-1
