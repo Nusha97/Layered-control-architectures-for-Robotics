@@ -55,10 +55,15 @@ def _continuity_constr(n, order, coeff1, coeff2, x_wp, T1):
         - constr:   list of cp.Constraint
     '''
     # Waypoint constraint
-    wp_constr = [
-        _diff_coeff(n, T1, 0) @ coeff1 == x_wp,
-        _diff_coeff(n, 0, 0)  @ coeff2 == x_wp
-    ]
+    if x_wp is not None:
+        wp_constr = [
+            _diff_coeff(n, T1, 0) @ coeff1 == x_wp,
+            _diff_coeff(n, 0, 0)  @ coeff2 == x_wp
+        ]
+    else:
+        wp_constr = [
+            _diff_coeff(n, T1, 0) @ coeff1 == _diff_coeff(n, 0, 0)  @ coeff2
+        ]
     # Continuity constraint
     cont_constr = [
             _diff_coeff(n, T1, i) @ coeff1 == _diff_coeff(n, 0, i) @ coeff2 \
@@ -76,7 +81,10 @@ def _boundary_cond(n, coeff, bcs, T):
     Return:
         - constr:   list of cp.Constraint
     '''
-    constr = [_diff_coeff(n, T, i) @ coeff == bc for i, bc in enumerate(bcs)]
+    constr = []
+    for i, bc in enumerate(bcs):
+        if bc is not None:
+            constr.append( _diff_coeff(n, T, i) @ coeff == bc )
     return constr
 
 def min_jerk_1d(waypoints, ts, n, num_steps):
