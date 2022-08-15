@@ -68,9 +68,12 @@ def featurize(x, u, K, gamma, sigma=1):
 
 def featurize_icnn():
     """
-
+    Input:
+        -x: np.array(p), states
+        -u: np.array(q), control actions
     :return:
     """
+    
 
 
 def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):

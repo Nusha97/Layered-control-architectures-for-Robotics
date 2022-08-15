@@ -1,6 +1,7 @@
 ##############################################################################
 # Fengjun Yang, 2022
 # Utility functions for testing the learned value and tracking controllers
+# Adding changes for linearized quad
 ##############################################################################
 
 import numpy as np
@@ -49,10 +50,11 @@ def linear_feedback_controller(K):
     Input:
         - K:        np.array, feedback gain
     Return:
-        - ctrl:     function(p -> q), outputs zero control
+        - ctrl:     function(p -> q), outputs linear control action
     """
-    return lambda x: np.dot(K, x)
-
+    return lambda x: np.dot(K, x).ravel()
+    # return K @ x
+    
 
 class TVcontroller():
     def __init__(self, K):
@@ -88,10 +90,14 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
 
     # Simulate forward
     x = x0.copy()
+    # print("init state", x)
     xtraj[0] = x
     for t in range(T):
         u = ctrl(x)
+        print("Control action", u)
         x_ = A @ x + B @ u + sigma * np.random.randn(p)
+        print("Output from dot", ((B @ u).shape))
+        # print("Output from utils", x_.shape)
         r = np.dot(Q @ x, x) + np.dot(R @ u, u)
         utraj[t] = u
         rtraj[t] = r
