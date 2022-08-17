@@ -18,54 +18,73 @@ def _svec(X):
     """ Symmetric vectorization: convert a symmetric matrix X compactly into a
     vector x in a way that
                             <X, X> = <x, x>
-    Input:      - X:        np.array(N,N), Symmetric matrix X
-    Return:     - x:        np.array(N*(N+1)/2), X vectorized
+    Input:      - X:        np.array(n, N,N), Symmetric matrix X
+    Return:     - x:        np.array(n, N*(N+1)/2), X vectorized
     """
-    # Check that X is symmetric
-    assert len(X.shape) == 2 and X.shape[0] == X.shape[1]
-    assert np.allclose(X, X.T)
-
-    # Vectorize X
-    diagonal = np.diag(X)
-    triu = X[np.triu_indices_from(X, 1)]
-    x = np.concatenate([diagonal, np.sqrt(2) * triu])
+    diagonal = np.diagonal(X, axis1=1, axis2=2)
+    iu = np.triu_indices(X.shape[1], 1)
+    triu = X[:, iu[0], iu[1]]
+    x = np.hstack([diagonal, np.sqrt(2) * triu])
     return x
-
 
 def _smat(x):
     """ The inverse of _svec(). See _svec() above.
-    Input:      - x:        np.array(k), vector x
-    Return:     - X:        np.array(N,N), x converted into matrix
+    Input:      - x:        np.array(n, k), vector x
+    Return:     - X:        np.array(n, N,N), x converted into matrix
     """
-    # Check that dimension is valid
-    assert len(x.shape) == 1
-    N = int((np.sqrt(1+8*len(x))-1) / 2)
-    assert N*(N+1)/2 == len(x)
-
-    # Convert x into a matrix
-    diagonal = np.diag(x[:N])
-    triu = np.zeros((N, N))
-    triu[np.triu_indices_from(triu, 1)] = x[N:] / np.sqrt(2)
-    X = triu + triu.T + diagonal
+    N = int((np.sqrt(1+8*x.shape[1])-1) / 2)
+    assert N*(N+1)/2 == x.shape[1]
+    # Convert the stacked diagonal elements into stacked diagonal matrices
+    diagonal = x[:, None, :N] * np.eye(N)
+    iu = np.triu_indices(N, 1)
+    triu = np.zeros((x.shape[0], N, N))
+    triu[:, iu[0], iu[1]] = x[:, N:] / np.sqrt(2)
+    X = diagonal + triu + np.transpose(triu, (0,2,1))
     return X
 
-def featurize(x, u, K, gamma, sigma=1):
+def featurize(xs, us, K, gamma, sigma=1):
     """ Featurize the state and control action.
     Input:
-        - x:        np.array(p), states
-        - u:        np.array(q), control actions
+        - xs:       np.array(n, p), states
+        - us:       np.array(n, q), control actions
         - K:        np.array(q, p), static linear feedback controller
         - gamma:    Float, discount factor
     Output:
-        - phi:      np.array(f), the feature phi(x, u) as defined in the
+        - phi:      np.array(n, f), the feature phi(x, u) as defined in the
                     paper
     """
     eta = gamma / (1-gamma)
-    xu = np.concatenate([x, u])
+    xus = np.hstack([xs, us])
+    xu_outer = xus[:, :, None] * xus[:, None, :]
     IK = np.vstack([np.eye(K.shape[1]), K])
-    return _svec(np.outer(xu, xu) + sigma ** 2 * eta * IK @ IK.T)
+    IKIK = sigma ** 2 * eta * IK @ IK.T
+    return _svec(xu_outer + IKIK)
+
+def evaluate(xtraj, utraj, rtraj, xtraj_, K, gamma, sigma=1):
+    """ Evaluate a given controller K based on the collected data.
+    Input:
+        - traj:     List of 4 tuples (x_k, u_k, r_k, x_{k+1})
+        - K:        np.array(q, p), controller
+        - gamma:    Float, discount factor
+    Output:
+        - Pxu_hat:  State-action value matrix
+        - Px_hat:   State value matrix
+    """
+    # Find the features of points on the trajectory
+    phi_xu = featurize(xtraj, utraj, K, gamma, sigma)
+    utraj_ = K @ xtraj_[:,:,None]
+    phi_xx = featurize(xtraj_, utraj_[:, :, 0], K, gamma, sigma)
+    # Evaluate the policy
+    A = np.einsum('ij,ik', phi_xu, (phi_xu-gamma*phi_xx))
+    b = np.sum( rtraj * phi_xu, 0)
+    pxu_hat = np.linalg.pinv(A) @ b
+    Pxu_hat = _smat(pxu_hat[None, :])[0]
+    IK = np.vstack([np.eye(K.shape[1]), K])
+    Px_hat = IK.T @ Pxu_hat @ IK
+    return Pxu_hat, Px_hat
 
 def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
+    # TODO: call new vectorized evaluate
     """ Least squares policy iteration for finding optimal LQR policy
     Input:
         - traj:         List of 4 tuples (x_k, u_k, r_k, x_{k+1})
@@ -96,28 +115,6 @@ def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
     IK = np.vstack([np.eye(K.shape[1]), K])
     P_state = IK.T @ P @ IK
     return K, P_state
-
-def evaluate(traj, K, gamma, sigma=1):
-    """ Evaluate a given controller K based on the collected data.
-    Input:
-        - traj:     List of 4 tuples (x_k, u_k, r_k, x_{k+1})
-        - K:        np.array(q, p), controller
-        - gamma:    Float, discount factor
-    Output:
-        - Pxu_hat:  State-action value matrix
-        - Px_hat:   State value matrix
-    """
-    # Find the features of points on the trajectory
-    phi_xu = np.array([featurize(x, u, K, gamma, sigma) for (x, u, _, _) in traj])
-    phi_xx = np.array([featurize(x_, K @ x_, K, gamma, sigma) \
-                        for (_, _, _, x_) in traj])
-    # Evaluate the policy
-    A = np.einsum('ij,ik', phi_xu, (phi_xu-gamma*phi_xx))
-    b = np.sum( np.array([r for (_,_,r,_) in traj])[:,None] * phi_xu, 0)
-    Pxu_hat = _smat(np.linalg.pinv(A) @ b)
-    IK = np.vstack([np.eye(K.shape[1]), K])
-    Px_hat = IK.T @ Pxu_hat @ IK
-    return Pxu_hat, Px_hat
 
 def construct_traj_list(xtrajs, utrajs, rtrajs):
     """ Convert a list of trajectories into the form that is taken by the

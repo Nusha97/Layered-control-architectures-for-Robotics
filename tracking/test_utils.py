@@ -81,7 +81,7 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
     p, q = B.shape
     xtraj = np.zeros((T+1, p))
     utraj = np.zeros((T, q))
-    rtraj = np.zeros(T)
+    rtraj = np.zeros((T, 1))
 
     # Simulate forward
     x = x0.copy()
@@ -95,6 +95,19 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
         xtraj[t+1] = x_
         x = x_
     return xtraj, utraj, rtraj
+
+def sample_multiple_traj(A, B, Q, R, ctrl, T, sigma=1, x0=None, num_traj=1):
+    ''' Samples multiple trajectories
+    '''
+    xs, us, rs, xs_ = [], [], [], []
+    for _ in range(num_traj):
+        xtraj, utraj, rtraj = sample_traj(A, B, Q, R, ctrl, T,
+                                          x0=x0, sigma=sigma)
+        xs.append(xtraj[:-1])
+        us.append(utraj)
+        rs.append(rtraj)
+        xs_.append(xtraj[1:])
+    return np.vstack(xs), np.vstack(us), np.vstack(rs), np.vstack(xs_)
 
 def sample_ref_traj(p, T, order=4):
     # TODO: move this into a tracking_utils.py file since it's a shared

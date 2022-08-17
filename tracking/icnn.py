@@ -13,10 +13,12 @@ class ICNN(nn.Module):
             - widths:       list of Integers indicating the width of each layer
         """
         super().__init__()
-        self.Wys = [torch.nn.Parameter(torch.randn((w, input_size), dtype=torch.double)) \
+        self.Wys = [torch.nn.Parameter(torch.randn((1, w, input_size), dtype=torch.double)) \
                 for w in widths]
-        self.Wzs = [torch.nn.Parameter(torch.randn((widths[i+1], widths[i]), dtype=torch.double)) for i in range(len(widths)-1)]
-        self.bs = [torch.nn.Parameter(torch.randn(w, dtype=torch.double)) \
+        self.Wzs = [torch.nn.Parameter(
+                        torch.randn((1, widths[i+1], widths[i]), dtype=torch.double)) \
+                                    for i in range(len(widths)-1)]
+        self.bs = [torch.nn.Parameter(torch.randn(1, w, 1, dtype=torch.double)) \
                    for w in widths]
         self.activate = nn.ELU()
         for i, W in enumerate(self.Wys):
@@ -27,12 +29,13 @@ class ICNN(nn.Module):
             self.register_parameter(name='b'+str(i), param=b)
 
     def forward(self, y):
+        y_ = y.unsqueeze(-1)
         # First layer
-        z = self.activate(torch.matmul(self.Wys[0], y).T + self.bs[0]).T
+        z = self.activate(self.Wys[0] @ y_ + self.bs[0])
         # Hidden layers
         for Wy, Wz, b in zip(self.Wys[1:-1], self.Wzs[:-1], self.bs[1:-1]):
-            z = torch.matmul(torch.exp(Wz), z).T + torch.matmul(Wy, y).T + b
-            z = self.activate(z).T
+            z = torch.exp(Wz) @ z + Wy @ y_ + b
+            z = self.activate(z)
         # Last layer
-        z = torch.matmul(torch.exp(self.Wzs[-1]), z).T + torch.matmul(self.Wys[-1], y).T + self.bs[-1]
-        return z
+        z = torch.exp(self.Wzs[-1]) @ z + self.Wys[-1] @ y_ + self.bs[-1]
+        return torch.squeeze(z, 1)
