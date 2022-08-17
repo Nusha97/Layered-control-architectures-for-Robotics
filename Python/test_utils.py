@@ -96,8 +96,8 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
         u = ctrl(x)
         # print("Control action", u)
         x_ = A @ x + B @ u + sigma * np.random.randn(p)
-        print("Output from dot", ((A @ x).shape))
-        print("Output from utils", x_.shape)
+        # print("Output from dot", ((A @ x).shape))
+        # print("Output from utils", x_.shape)
         r = np.dot(Q @ x, x) + np.dot(R @ u, u)
         utraj[t] = u
         rtraj[t] = r
