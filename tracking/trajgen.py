@@ -170,5 +170,5 @@ def traj_coeffs(waypoints, ts, n, num_steps, fo):
         ref:        reference trajectory
     """
     objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, p, num_steps)
-    coeffs = cp.vstack(coeff).flatten()
+    coeffs = cp.vstack(coeff)
     return coeffs

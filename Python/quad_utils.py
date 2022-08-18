@@ -77,7 +77,7 @@ class linear_quad:
             return "No reference polynomial coeff provided"
 
         else:
-            x = coeff
+            x = coeff[0:]
 
 
     def disturbance(self, dist):
