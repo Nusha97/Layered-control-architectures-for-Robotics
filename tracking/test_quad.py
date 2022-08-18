@@ -24,11 +24,11 @@ c = 0.2 #air friction constant
 
 # quadrotor physical constants
 m = 1.0  #kg  mass of the quadrotor
-Ixx = 0.5   # kg*m2 moment of inertia around X-axis (quadrotor rotates around X-axis)
-Iyy = 0.5   # kg*m2
-Izz = 0.5   # kg*m2
-Ktao = 0.02           # Drag torque constant for motors
-Kt = 0.2             # Thrust constant for motors
+Ixx =0.5   # kg*m2 moment of inertia around X-axis (quadrotor rotates around X-axis)
+Iyy =0.5   # kg*m2 
+Izz =0.5   # kg*m2
+Ktao =0.02           # Drag torque constant for motors
+Kt =0.2             # Thrust constant for motors
 
 
 # quadrotor geometry constants
@@ -135,8 +135,7 @@ q = 1
 
 sigma = 0
 
-Qx, Rx = 100*np.zeros([p, p]), np.eye(q)
-Qx[0, 0] = 1
+Qx, Rx = 100*np.eye(p), np.eye(q)
 Tref = 25
 # Construct augmented system for tracking
 At, Bt, Qt, Rt = lstd.nominal_to_tracking(Ax, Bx, Qx, Rx, Tref)
@@ -175,9 +174,8 @@ for i, rho in enumerate(rhos):
     plt.plot(np.arange(Tref), np.abs(utraj), '+--', label='static')
     # plt.plot(np.arange(Tref), np.abs(uvi), '+--', label='opt')
     plt.legend()
-    plt.show()
     
-"""    
+    
 # LQR Controller for y-subsystem
 
 p = 4
@@ -209,7 +207,7 @@ for i, rho in enumerate(rhos):
     vi_ctrlr = test_utils.TVcontroller(Kvi[:])
     xvi, uvi, rvi = test_utils.sample_traj(At, Bt, Qt, Rt, vi_ctrlr.ctrl, Tref, d0, sigma=0)
     
-    plt.subplot(3, len(rhos), i+1+len(rhos))
+     plt.subplot(3, len(rhos), i+1+len(rhos))
     plt.plot(tp, ref[0::p], 'x-', label='reference y')
     # plt.plot(tp, xvi[:,0], '+-', label='tracking')
     plt.plot(tp, xtraj[:, 0], '+-', label='static y')
@@ -306,4 +304,4 @@ for i, rho in enumerate(rhos):
     plt.subplot(3, len(rhos), i+1+2*len(rhos))
     plt.plot(np.arange(Tref), np.abs(utraj), '+--', label='static')
     # plt.plot(np.arange(Tref), np.abs(uvi), '+--', label='opt')
-    plt.legend()"""
+    plt.legend()
