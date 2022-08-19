@@ -84,15 +84,26 @@ class linear_quad:
 
         :return:
         """
-
+        x = np.cross(self.get_yc(), self.get_zb())
+        return x/np.linalg.norm(x)
 
     def get_yb(self):
+        """
+
+        :return:
+        """
+        return np.cross(self.get_zb(), self.get_xb())
 
 
     def get_yc(self):
+        """
+
+        :return:
+        """
 
 
-    def get_hq(self):
+
+    def get_hw(self):
 
 
 
@@ -146,8 +157,11 @@ class non_linear_quad:
 
 def compute_coeff_deriv(coeff, n):
     """
-    Function to compute the derivative
+    Function to compute the nth derivative of a polynomial
     :return:
     """
+    waypoints, p = 
+    for i in range(len(waypoints)-1):
+
 
     
