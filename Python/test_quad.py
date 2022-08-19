@@ -24,7 +24,8 @@ c = 0.2 #air friction constant
 
 # quadrotor physical constants
 m = 1.0  #kg  mass of the quadrotor
-Ixx = 0.5   # kg*m2 moment of inertia around X-axis (quadrotor rotates around X-axis)
+Ixx = 0.5   # kg*m2 moment of
+# inertia around X-axis (quadrotor rotates around X-axis)
 Iyy = 0.5   # kg*m2
 Izz = 0.5   # kg*m2
 Ktao = 0.02           # Drag torque constant for motors

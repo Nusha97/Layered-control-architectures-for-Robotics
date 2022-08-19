@@ -28,7 +28,9 @@ class linear_quad:
     t2 = 3 * np.pi / 4  # rads
     t3 = 5 * np.pi / 4  # rads
     t4 = 7 * np.pi / 4  # rads
-    l = 0.2  # m  arm lenght from center of mass to each rotor
+    l = 0.2  # m  arm length from center of mass to each rotor
+
+    ## Ignore these systems for now
     Ax = np.array(
                     [[0.0,1.0,0.0,0.0],
                     [0.0,0.0,g,0.0],
@@ -62,9 +64,43 @@ class linear_quad:
                     [[0.0],
                     [Ktao/(Kt*Izz)]])
 
+
     def __init__(self, dist):
         self.dist = dist
+        self.coeff = None
 
+
+    def get_zb(self):
+        """
+        Function to compute
+        :return:
+        """
+        T = compute_coeff_deriv(self.coeff, 2)
+        return  T/np.linalg.norm(T)
+
+
+    def get_xb(self):
+        """
+
+        :return:
+        """
+
+
+    def get_yb(self):
+
+
+    def get_yc(self):
+
+
+    def get_hq(self):
+
+
+
+    def intermediate_qt(self):
+        """
+        Function to compute intermediaries for going from flat outputs to states
+        :return:
+        """
 
     def compute_states(self, coeff):
         """
@@ -77,11 +113,25 @@ class linear_quad:
             return "No reference polynomial coeff provided"
 
         else:
+            self.coeff = coeff
             x = coeff[0:]
+            # Isolate outputs
+            # Call intermediate qt
+            # Compute full state
+
 
 
     def disturbance(self, dist):
-        if
+        """
+        Function to introduce disturbances in your dynamics
+        :param dist:
+        :return:
+        """
+        if dist is None:
+            pass
+        else:
+            return
+
 
 
 class non_linear_quad:
@@ -92,5 +142,12 @@ class non_linear_quad:
         """
             Initialize full DOF nonlinear quad
         """
+
+
+def compute_coeff_deriv(coeff, n):
+    """
+    Function to compute the derivative
+    :return:
+    """
 
     
