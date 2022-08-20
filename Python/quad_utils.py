@@ -5,6 +5,33 @@
 import numpy as np
 from nonlinear_dynamics import *
 import trajgen
+import test_utils
+
+
+def compute_coeff_deriv(coeff, n):
+    """
+    Function to compute the nth derivative of a polynomial
+    :return:
+    """
+    num_piecewise, p = coeff.shape # number of waypoints, order of polynomial
+    for i in range(len(num_piecewise)-1): # piecewise polynomial
+        for j in range(n): # Compute nth derivative of polynomial
+            t = np.poly1d([coeff[i, :]])
+            t = t.deriv()
+            coeff[i, j] = 0
+            coeff[i, j+1:] = t.coefficients
+    return coeff
+
+
+def sampler(poly):
+    """
+    Function to generate samples given polynomials
+    :param coeff:
+    :return:
+    """
+    points = np.array([np.linspace(0, 1, T) ** (i + 1) for i in range(order)])
+    return poly(points)
+
 
 class linear_quad:
     """
@@ -67,16 +94,35 @@ class linear_quad:
 
     def __init__(self, dist):
         self.dist = dist
-        self.coeff = None
+        self.coeff_x = None
+        self.coeff_y = None
+        self.coeff_z = None
+        self.coeff_yaw = None
 
 
-    def get_zb(self):
+    def get_zb(self, p, num_piecewise):
         """
         Function to compute
         :return:
         """
-        T = compute_coeff_deriv(self.coeff, 2)
-        return  T/np.linalg.norm(T)
+        ddot_coeff = []
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_x, 2))
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_y, 2))
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_z, 2))
+
+        # Sample ref trajectories
+        ddot_x = np.poly1d(ddot_coeff[0])
+        ddot_y = np.poly1d(ddot_coeff[1])
+        ddot_z = np.poly1d(ddot_coeff[2])
+
+        Tref = 25
+
+        ddot_ref = np.zeros([3, Tref+1])
+        ddot_ref[0, :] = sampler(ddot_x)
+        ddot_ref[1, :] = sampler(ddot_y)
+        ddot_ref[2, :] = sampler(ddot_z) + g*np.ones(Tref+1)
+
+        return  ddot_ref/np.linalg.norm(ddot_ref, axis=0) # Should this be computed for each waypoint separately?
 
 
     def get_xb(self):
@@ -87,24 +133,29 @@ class linear_quad:
         x = np.cross(self.get_yc(), self.get_zb())
         return x/np.linalg.norm(x)
 
-    def get_yb(self):
+
+    def get_yb(self, p, num_piecewise):
         """
 
         :return:
         """
-        return np.cross(self.get_zb(), self.get_xb())
+        return np.cross(self.get_zb(p, num_piecewise), self.get_xb()) # For each time step has to be done
 
 
-    def get_yc(self):
+    def get_yc(self, p, num_piecewise):
         """
 
         :return:
         """
-
+        return np.array([[np.sin(self.coeff_yaw)], [np.cos(self.coeff_yaw)], np.zeros(p*num_piecewise)])
 
 
     def get_hw(self):
+        """
 
+        :param self:
+        :return:
+        """
 
 
     def intermediate_qt(self):
@@ -113,19 +164,22 @@ class linear_quad:
         :return:
         """
 
-    def compute_states(self, coeff):
+
+    def compute_states(self, coeff_x, coeff_y, coeff_z, coeff_yaw):
         """
         Function takes in reference trajectories of flat outputs and computes
         the reference trajectories for quadrotor states
         :param ref: reference trajectory generated on flat outputs
         :return: x_traj
         """
-        if coeff is None:
+        if coeff_x or coeff_y or coeff_z or coeff_yaw is None:
             return "No reference polynomial coeff provided"
 
         else:
-            self.coeff = coeff
-            x = coeff[0:]
+            self.coeff_x = coeff_x
+            self.coeff_y = coeff_y
+            self.coeff_z = coeff_z
+            self.coeff_yaw = coeff_yaw
             # Isolate outputs
             # Call intermediate qt
             # Compute full state
@@ -153,15 +207,3 @@ class non_linear_quad:
         """
             Initialize full DOF nonlinear quad
         """
-
-
-def compute_coeff_deriv(coeff, n):
-    """
-    Function to compute the nth derivative of a polynomial
-    :return:
-    """
-    waypoints, p = 
-    for i in range(len(waypoints)-1):
-
-
-    
