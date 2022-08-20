@@ -4,18 +4,15 @@
 
 import numpy as np
 from nonlinear_dynamics import *
-import trajgen
-import test_utils
 
 
-def compute_coeff_deriv(coeff, n):
+def compute_coeff_deriv(coeff, n, num_waypt):
     """
     Function to compute the nth derivative of a polynomial
     :return:
     """
-    num_piecewise, p = coeff.shape # number of waypoints, order of polynomial
-    for i in range(len(num_piecewise)-1): # piecewise polynomial
-        for j in range(n): # Compute nth derivative of polynomial
+    for i in range(len(num_waypt)-1):  # piecewise polynomial
+        for j in range(n):  # Compute nth derivative of polynomial
             t = np.poly1d([coeff[i, :]])
             t = t.deriv()
             coeff[i, j] = 0
@@ -23,14 +20,13 @@ def compute_coeff_deriv(coeff, n):
     return coeff
 
 
-def sampler(poly):
+def sampler(poly, T, num_waypt):
     """
     Function to generate samples given polynomials
     :param coeff:
     :return:
     """
-    points = np.array([np.linspace(0, 1, T) ** (i + 1) for i in range(order)])
-    return poly(points)
+    return [poly[i](np.linspace(0, 1, T)) for i in range(num_waypt)]
 
 
 class linear_quad:
@@ -59,37 +55,37 @@ class linear_quad:
 
     ## Ignore these systems for now
     Ax = np.array(
-                    [[0.0,1.0,0.0,0.0],
-                    [0.0,0.0,g,0.0],
-                    [0.0,0.0,0.0,1.0],
-                    [0.0,0.0,0.0,0.0]])
+                    [[0.0, 1.0, 0.0, 0.0],
+                     [0.0, 0.0, g, 0.0],
+                     [0.0, 0.0, 0.0, 1.0],
+                     [0.0, 0.0, 0.0, 0.0]])
     Bx = np.array(
                     [[0.0],
-                    [0.0],
-                    [0.0],
-                    [np.sin(t1)*l/Ixx]])
+                     [0.0],
+                     [0.0],
+                     [np.sin(t1)*l/Ixx]])
     Ay = np.array(
-                    [[0.0,1.0,0.0,0.0],
-                    [0.0,0.0,-1.0*g,0.0],
-                    [0.0,0.0,0.0,1.0],
-                    [0.0,0.0,0.0,0.0]])
+                    [[0.0, 1.0, 0.0, 0.0],
+                     [0.0, 0.0, -1.0*g, 0.0],
+                     [0.0, 0.0, 0.0, 1.0],
+                     [0.0, 0.0, 0.0, 0.0]])
     By = np.array(
                     [[0.0],
-                    [0.0],
-                    [0.0],
-                    [np.sin(t1)*l/Iyy]])
+                     [0.0],
+                     [0.0],
+                     [np.sin(t1)*l/Iyy]])
     Az = np.array(
-                    [[0.0,1.0],
-                    [0.0,0.0]])
+                    [[0.0, 1.0],
+                     [0.0, 0.0]])
     Bz = np.array(
                     [[0.0],
-                    [1.0/m]])
+                     [1.0/m]])
     Ayaw = np.array(
-                    [[0.0,1.0],
-                    [0.0,0.0]])
+                    [[0.0, 1.0],
+                     [0.0, 0.0]])
     Byaw = np.array(
                     [[0.0],
-                    [Ktao/(Kt*Izz)]])
+                     [Ktao/(Kt*Izz)]])
 
 
     def __init__(self, dist):
@@ -100,69 +96,107 @@ class linear_quad:
         self.coeff_yaw = None
 
 
-    def get_zb(self, p, num_piecewise):
+    def get_T(self, Tref, num_waypt):
+        """
+
+        :param Tref:
+        :param num_waypt:
+        :return:
+        """
+        ddot_coeff = []
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_x, 2, num_waypt))
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_y, 2, num_waypt))
+        ddot_coeff.append(compute_coeff_deriv(self.coeff_z, 2, num_waypt))
+
+        # Sample ref trajectories
+        ddot_x = [np.poly1d(ddot_coeff[0][i, :]) for i in range(num_waypt)]  # x
+        ddot_y = [np.poly1d(ddot_coeff[1][i, :]) for i in range(num_waypt)]  # y
+        ddot_z = [np.poly1d(ddot_coeff[2][i, :]) for i in range(num_waypt)]  # z
+
+        ddot_ref = []
+        ddot_ref.append(sampler(ddot_x, Tref, num_waypt))
+        ddot_ref.append(sampler(ddot_y, Tref, num_waypt))
+        ddot_ref.append(sampler(ddot_z, Tref, num_waypt) + g * np.ones([num_waypt, Tref]))
+
+        ddot_ref = np.vstack(ddot_ref).flatten()
+        ddot_ref = np.reshape(ddot_ref, [3, num_waypt * Tref], order='C')
+        return ddot_ref
+
+
+    def get_zb(self, ddot_ref):
         """
         Function to compute
         :return:
         """
-        ddot_coeff = []
-        ddot_coeff.append(compute_coeff_deriv(self.coeff_x, 2))
-        ddot_coeff.append(compute_coeff_deriv(self.coeff_y, 2))
-        ddot_coeff.append(compute_coeff_deriv(self.coeff_z, 2))
-
-        # Sample ref trajectories
-        ddot_x = np.poly1d(ddot_coeff[0])
-        ddot_y = np.poly1d(ddot_coeff[1])
-        ddot_z = np.poly1d(ddot_coeff[2])
-
-        Tref = 25
-
-        ddot_ref = np.zeros([3, Tref+1])
-        ddot_ref[0, :] = sampler(ddot_x)
-        ddot_ref[1, :] = sampler(ddot_y)
-        ddot_ref[2, :] = sampler(ddot_z) + g*np.ones(Tref+1)
-
-        return  ddot_ref/np.linalg.norm(ddot_ref, axis=0) # Should this be computed for each waypoint separately?
+        return ddot_ref/np.linalg.norm(ddot_ref, axis=0)
 
 
-    def get_xb(self):
+    def get_xb(self, yc, zb):
         """
 
         :return:
         """
-        x = np.cross(self.get_yc(), self.get_zb())
+        x = np.cross(yc, zb)
         return x/np.linalg.norm(x)
 
 
-    def get_yb(self, p, num_piecewise):
+    def get_yb(self, zb, xb):
         """
 
         :return:
         """
-        return np.cross(self.get_zb(p, num_piecewise), self.get_xb()) # For each time step has to be done
+        return np.cross(zb, xb)  # For each time step has to be done
 
 
-    def get_yc(self, p, num_piecewise):
+    def get_yc(self, Tref, num_waypt):
         """
 
         :return:
         """
-        return np.array([[np.sin(self.coeff_yaw)], [np.cos(self.coeff_yaw)], np.zeros(p*num_piecewise)])
+        yaw = [np.poly1d(self.coeff_yaw[i, :]) for i in range(num_waypt)]
+        ref = sampler(yaw, Tref, num_waypt)
+        return np.array([[-np.sin(ref)], [np.cos(ref)], [np.zeros(Tref*num_waypt)]])
 
 
-    def get_hw(self):
+    def get_hw(self, ddot_ref, Tref, num_waypt, zb):
         """
 
         :param self:
         :return:
         """
+        dddot_coeff = []
+        dddot_coeff.append(compute_coeff_deriv(self.coeff_x, 3, num_waypt))
+        dddot_coeff.append(compute_coeff_deriv(self.coeff_y, 3, num_waypt))
+        dddot_coeff.append(compute_coeff_deriv(self.coeff_z, 3, num_waypt))
+
+        # Sample ref trajectories
+        dddot_x = [np.poly1d(dddot_coeff[0][i, :]) for i in range(num_waypt)]
+        dddot_y = [np.poly1d(dddot_coeff[1][i, :]) for i in range(num_waypt)]
+        dddot_z = [np.poly1d(dddot_coeff[2][i, :]) for i in range(num_waypt)]
+
+        dddot_ref = []
+        dddot_ref.append(sampler(dddot_x, Tref, num_waypt))
+        dddot_ref.append(sampler(dddot_y, Tref, num_waypt))
+        dddot_ref.append(sampler(dddot_z, Tref, num_waypt))
+
+        dddot_ref = np.vstack(dddot_ref).flatten()
+        dddot_ref = np.reshape(dddot_ref, [3, num_waypt * Tref], order='C')
+        return (dddot_ref - (dddot_coeff @ zb) @ zb)/np.linalg.norm(ddot_ref, axis=0)
 
 
-    def intermediate_qt(self):
+    def intermediate_qt(self, Tref, num_waypt):
         """
         Function to compute intermediaries for going from flat outputs to states
         :return:
         """
+        T = self.get_T(Tref, num_waypt)
+        zb = self.get_zb(T)  # 2D array of size 3 x (num_waypt * Tref)
+        yc = self.get_yc(Tref, num_waypt)
+        xb = self.get_xb(yc, zb)
+        yb = self.get_yb(zb, xb)
+        hw = self.get_hw(T, Tref, num_waypt, zb)
+
+        return [xb, yb, zb, yc, T, hw]
 
 
     def compute_states(self, coeff_x, coeff_y, coeff_z, coeff_yaw):
@@ -176,19 +210,45 @@ class linear_quad:
             return "No reference polynomial coeff provided"
 
         else:
-            self.coeff_x = coeff_x
+            self.coeff_x = coeff_x # 2D arrays of size num_waypt, order of polynomial
             self.coeff_y = coeff_y
             self.coeff_z = coeff_z
             self.coeff_yaw = coeff_yaw
-            # Isolate outputs
-            # Call intermediate qt
-            # Compute full state
 
+            # Isolate outputs
+            Tref = 25
+            num_waypt, order = self.coeff_x.shape
+
+            # Call intermediate qt
+            xb, yb, zb, yc, T, hw = self.intermediate_qt(Tref, num_waypt)
+            e3 = np.array([0, 0, 1])
+            zw = np.tile(e3, [num_waypt*Tref]).transpose()
+
+            # Compute full state
+            x_ref = [np.poly1d(self.coeff_x[i, :]) for i in range(num_waypt)]
+            dot_x = compute_coeff_deriv(self.coeff_x, 1, num_waypt)
+            xdot_ref = [np.poly1d(dot_x[i, :]) for i in range(num_waypt)]
+            y_ref = [np.poly1d(self.coeff_y[i, :]) for i in range(num_waypt)]
+            dot_y = compute_coeff_deriv(self.coeff_y, 1, num_waypt)
+            ydot_ref = [np.poly1d(dot_y[i, :]) for i in range(num_waypt)]
+            z_ref = [np.poly1d(self.coeff_z[i, :]) for i in range(num_waypt)]
+            dot_z = compute_coeff_deriv(self.coeff_z, 1, num_waypt)
+            zdot_ref = [np.poly1d(dot_z[i, :]) for i in range(num_waypt)]
+            roll_ref = np.asin((zw.transpose() @ yb)/(np.cos(np.asin(zw.transpose @ xb))))  # phi
+            rolldot_ref = -yb @ hw
+            pitch_ref = -np.asin(zw.transpose @ xb)  # theta
+            pitchdot_ref = xb @ hw
+            yaw_ref = [np.poly1d(self.coeff_yaw[i, :]) for i in range(num_waypt)]
+            dot_yaw = compute_coeff_deriv(self.coeff_yaw, 1, num_waypt)
+            yawdot_ref = [np.poly1d(dot_yaw[i, :]) for i in range(num_waypt)]  # zb @ yawdot @ zw ?? Check all the matmul
+
+            return [x_ref, xdot_ref, y_ref, ydot_ref, z_ref, zdot_ref, roll_ref, rolldot_ref, pitch_ref, pitchdot_ref, yaw_ref, yawdot_ref]
 
 
     def disturbance(self, dist):
         """
         Function to introduce disturbances in your dynamics
+        Should this be a part of the quad class?
         :param dist:
         :return:
         """
@@ -198,12 +258,16 @@ class linear_quad:
             return
 
 
-
 class non_linear_quad:
     """
-        Nonlinear dynamics of quadrotor with options
+        Nonlinear dynamics of quadrotor with options for adding sensor drift
     """
-    def __init__(self):
+    def __init__(self, x, u):
         """
             Initialize full DOF nonlinear quad
         """
+        self.x_dot = f(x, u)
+
+
+
+
