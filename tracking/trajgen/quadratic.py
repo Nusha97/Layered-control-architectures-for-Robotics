@@ -122,3 +122,15 @@ def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
         return None
     else:
         return ref.value
+
+
+def traj_coeffs(waypoints, ts, n, num_steps, fo):
+    """
+    Generating trajectories and passing the coefficients to compute the
+    full state of the quad-rotor system
+    Return:
+        ref:        reference trajectory
+    """
+    objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, p, num_steps)
+    coeffs = cp.vstack(coeff)
+    return coeffs
