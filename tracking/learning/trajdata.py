@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 
 class TrajDataset(Dataset):
     ''' Trajectory dataset; inherits torch.utils.data.Dataset for easier
-        training
+        training. The data are transformed into torch tensors
     '''
     def __init__(self, xtraj, utraj, rtraj, xtraj_):
         '''

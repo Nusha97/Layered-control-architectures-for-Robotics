@@ -6,7 +6,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 from abc import ABC, abstractmethod
+from . import lstd
 
 class ValueFunc(ABC):
     ''' This is the abstract class of value functions. It is inherited by
@@ -25,7 +27,7 @@ class ValueFunc(ABC):
 ################################################################################
 class QuadraticValueFunc(ValueFunc):
     ''' Parameterizes the value function as a quadratic function and learn it
-        with least squares
+        with least squares temporal difference. Does not backprop.
     '''
     def __init__(self, gamma=0.99, sigma=0):
         self.Pxu = None
@@ -33,14 +35,14 @@ class QuadraticValueFunc(ValueFunc):
         self.gamma = gamma
         self.sigma = sigma
 
-    def learn(self, dataset):
-        pass
-
     def learn(self, dataset, K):
-        self.Pxu, self.P = lstd.evaluate(dataset, K, self.gamma, self.sigma)
+        xtraj, utraj, rtraj, xtraj_ = dataset[:]
+        self.Pxu, self.P = lstd.evaluate(xtraj.numpy(), utraj.numpy(),
+                rtraj.numpy(), xtraj_.numpy(), K, self.gamma, self.sigma)
 
     def pred(self, x0, ref):
-        pass
+        d0 = np.concatenate([x0, ref])
+        return np.dot(d0, self.P @ d0)
 
 
 ################################################################################

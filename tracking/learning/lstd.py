@@ -42,7 +42,7 @@ def _smat(x):
     X = diagonal + triu + np.transpose(triu, (0,2,1))
     return X
 
-def featurize(xs, us, K, gamma, sigma=1):
+def featurize(xs, us, K, gamma, sigma=0):
     """ Featurize the state and control action.
     Input:
         - xs:       np.array(n, p), states
@@ -60,10 +60,13 @@ def featurize(xs, us, K, gamma, sigma=1):
     IKIK = sigma ** 2 * eta * IK @ IK.T
     return _svec(xu_outer + IKIK)
 
-def evaluate(xtraj, utraj, rtraj, xtraj_, K, gamma, sigma=1):
+def evaluate(xtraj, utraj, rtraj, xtraj_, K, gamma, sigma=0):
     """ Evaluate a given controller K based on the collected data.
     Input:
-        - traj:     List of 4 tuples (x_k, u_k, r_k, x_{k+1})
+        - xtraj:    np.array(n, p), trajectory of state
+        - utraj:    np.array(n, q), trajectory of input
+        - rtraj:    np.array(n, 1), trajectory of reward
+        - xtraj_:   np.array(n, p), trajectory of next state
         - K:        np.array(q, p), controller
         - gamma:    Float, discount factor
     Output:
@@ -83,11 +86,14 @@ def evaluate(xtraj, utraj, rtraj, xtraj_, K, gamma, sigma=1):
     Px_hat = IK.T @ Pxu_hat @ IK
     return Pxu_hat, Px_hat
 
-def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
-    # TODO: call new vectorized evaluate
+def lspi(xtraj, utraj, rtraj, xtraj_, gamma, sigma=0, K0=None,
+         max_iter=50, verbose=False):
     """ Least squares policy iteration for finding optimal LQR policy
     Input:
-        - traj:         List of 4 tuples (x_k, u_k, r_k, x_{k+1})
+        - xtraj:    np.array(n, p), trajectory of state
+        - utraj:    np.array(n, q), trajectory of input
+        - rtraj:    np.array(n, 1), trajectory of reward
+        - xtraj_:   np.array(n, p), trajectory of next state
         - gamma:        discount factor
         - K0:           initial policy
         - max_iter:     maximum number of iterations
@@ -95,46 +101,25 @@ def lspi(traj, gamma, sigma=1, K0=None, max_iter=100, show_progress=True):
         - K:            learned controller
     """
     # Initialize controller
-    p = len(traj[0][0])
-    q = len(traj[0][1])
+    p = xtraj.shape[1]
+    q = utraj.shape[1]
     if K0 is None:
         K = np.random.random((q, p))
     else:
         K = K0.copy()
     # Policy iteration until convergence
-    iter_range = tqdm(range(max_iter)) if show_progress else range(max_iter)
-    for _ in iter_range:
-        P, _ = evaluate(traj, K, gamma, sigma)
+    for it in range(max_iter):
+        P, _ = evaluate(xtraj, utraj, rtraj, xtraj_, K, gamma, sigma)
         P12 = P[:p, p:]
         P22 = P[p:, p:]
         K_ = -np.linalg.pinv(P22) @ P12.T
-        if np.linalg.norm(K_ - K, 'fro') < PI_TOL:
+        improvement = np.linalg.norm(K_ - K, 'fro')
+        if verbose:
+            print('Iteration:{:6d}, |P - P_new|:\t{:8.3f}'.format(it, improvement))
+        if improvement < PI_TOL:
             break
         K = K_
     # Find the state value function
     IK = np.vstack([np.eye(K.shape[1]), K])
     P_state = IK.T @ P @ IK
     return K, P_state
-
-def construct_traj_list(xtrajs, utrajs, rtrajs):
-    """ Convert a list of trajectories into the form that is taken by the
-    evaluate method.
-    """
-    traj = []
-    for xtraj, utraj, rtraj in zip(xtrajs, utrajs, rtrajs):
-        T = utraj.shape[0]
-        traj += list(zip(xtraj[:T], utraj, rtraj, xtraj[1:]))
-    return traj
-
-def nominal_to_tracking(A, B, Q, R, T):
-    """ Really weird but to making tracking work correctly we need an augmented
-    state of p*(T+2)
-    """
-    p, q = B.shape
-    Z = np.eye(p*(T+1), k=p)
-    #Z[-p:] = np.eye(p*(T+1))[-p:]
-    zero = np.zeros((p, p*T+p))
-    Atilde = np.block([[A, zero],[zero.T, Z]])
-    Btilde = np.vstack([B, np.zeros((p*(T+1), q))])
-    E = np.hstack([np.eye(p), -np.eye(p), np.zeros((p, p*T))])
-    return Atilde, Btilde, E.T @ Q @ E, R
