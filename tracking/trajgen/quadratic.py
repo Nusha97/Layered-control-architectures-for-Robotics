@@ -121,7 +121,7 @@ def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
     if prob.status != cp.OPTIMAL:
         return None
     else:
-        return ref.value
+        return ref.value, np.array([c.value for c in coeff])
 
 
 def traj_coeffs(waypoints, ts, n, num_steps, fo):

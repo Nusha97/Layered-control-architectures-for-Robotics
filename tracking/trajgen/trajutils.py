@@ -13,11 +13,12 @@ def _diff_coeff(n, t, dx_order):
     '''
     assert dx_order <= n
     count = n - dx_order + 1 # Number of nonzero elements
-    t_powers = t ** np.arange(count)
-    multln = sps.gammaln(np.arange(count) + dx_order + 1) - sps.gammaln(np.arange(count)+1)
+    rrange = np.arange(count-1, -1, -1)  # Reversed range
+    t_powers = t ** rrange
+    multln = sps.gammaln(rrange + dx_order + 1) - sps.gammaln(rrange+1)
     mult = np.exp(multln)
-    v_reverse = np.concatenate([np.zeros(dx_order), t_powers * mult])
-    return v_reverse[::-1]
+    v_reverse = np.concatenate([t_powers * mult, np.zeros(dx_order)])
+    return v_reverse
 
 def _facln(n, i):
     ''' Helper function that computes ln( n*(n-i)*...*(n-i+1) ) '''

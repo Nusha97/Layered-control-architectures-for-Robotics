@@ -81,12 +81,15 @@ class NNValueFunc(ValueFunc):
             if(verbose and epoch % print_interval == 0):
                 print('Epoch: {} \t Training loss: {}'.format(epoch+1, loss.item()))
 
+    def eval(self):
+        for param in self.network.parameters():
+            param.requires_grad = False
+        self.network.eval()
+
     def pred(self, x0, ref):
         ''' The general prediction for NN value functions '''
-        pass
-
-    def pred_(self, x):
-        return self.network(x.unsqueeze(0))[0]
+        d0 = torch.cat([x0, ref]).double()
+        return self.network(d0.unsqueeze(0))[0]
 
 
 class ICNNValueFunc(NNValueFunc):
