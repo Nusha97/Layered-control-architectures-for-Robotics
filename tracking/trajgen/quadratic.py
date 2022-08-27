@@ -124,13 +124,22 @@ def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
         return ref.value, np.array([c.value for c in coeff])
 
 
-def traj_coeffs(waypoints, ts, n, num_steps, fo):
-    """
-    Generating trajectories and passing the coefficients to compute the
+# Changes made by Anusha S.
+def traj_coeffs(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
+    """ Generating trajectories and passing the coefficients to compute the
     full state of the quad-rotor system
     Return:
-        ref:        reference trajectory
+        coeff:        polynomial coeffcients
     """
     objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, p, num_steps)
-    coeffs = cp.vstack(coeff)
-    return coeffs
+    P12 = P[0:p, p:]
+    P22 = P[p:, p:]
+
+    x0 = np.array(waypoints[0])
+    penalty = cp.quad_form(ref, P22) + 2 * x0 @ (P12 @ ref)
+    prob = cp.Problem(cp.Minimize(objective + rho * penalty), constr)
+    prob.solve()
+    if prob.status != cp.OPTIMAL:
+        return None
+    else:
+        return coeff
