@@ -151,4 +151,4 @@ def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
     if prob.status != cp.OPTIMAL:
         return None
     else:
-        return ref.value
+        return ref.value, coeff

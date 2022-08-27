@@ -11,22 +11,28 @@ def compute_coeff_deriv(coeff, n, num_waypt):
     Function to compute the nth derivative of a polynomial
     :return:
     """
-    for i in range(len(num_waypt)-1):  # piecewise polynomial
+    coeff_new = coeff.value.copy()
+    for i in range(num_waypt):  # piecewise polynomial
         for j in range(n):  # Compute nth derivative of polynomial
-            t = np.poly1d([coeff[i, :]])
-            t = t.deriv()
-            coeff[i, j] = 0
-            coeff[i, j+1:] = t.coefficients
-    return coeff
+            t = np.poly1d(coeff_new[i, :]).deriv()
+            coeff_new[i, j] = 0
+            coeff_new[i, j+1:] = t.coefficients
+    return coeff_new
 
 
-def sampler(poly, T, num_waypt):
+def sampler(poly, T, num_waypt, ts):
     """
     Function to generate samples given polynomials
     :param coeff:
     :return:
     """
-    return [poly[i](np.linspace(0, 1, T)) for i in range(num_waypt)]
+    k = 0
+    ref = []
+    for i, tt in enumerate(np.linspace(ts[0], ts[-1], T)):
+        if tt > ts[k + 1]: k += 1
+        ref.append(poly[k](tt-ts[k]))
+    # return [poly[i](np.linspace(0, 1, T)) for i in range(num_waypt)]
+    return ref
 
 
 class linear_quad:
@@ -94,9 +100,11 @@ class linear_quad:
         self.coeff_y = None
         self.coeff_z = None
         self.coeff_yaw = None
+        self.waypt = None
+        self.Tref = None
 
 
-    def get_T(self, Tref, num_waypt):
+    def get_T(self, num_waypt):
         """
 
         :param Tref:
@@ -114,12 +122,12 @@ class linear_quad:
         ddot_z = [np.poly1d(ddot_coeff[2][i, :]) for i in range(num_waypt)]  # z
 
         ddot_ref = []
-        ddot_ref.append(sampler(ddot_x, Tref, num_waypt))
-        ddot_ref.append(sampler(ddot_y, Tref, num_waypt))
-        ddot_ref.append(sampler(ddot_z, Tref, num_waypt) + g * np.ones([num_waypt, Tref]))
+        ddot_ref.append(sampler(ddot_x, self.Tref, num_waypt, self.waypt))
+        ddot_ref.append(sampler(ddot_y, self.Tref, num_waypt, self.waypt))
+        ddot_ref.append(sampler(ddot_z, self.Tref, num_waypt, self.waypt) + g * np.ones([self.Tref]))
 
         ddot_ref = np.vstack(ddot_ref).flatten()
-        ddot_ref = np.reshape(ddot_ref, [3, num_waypt * Tref], order='C')
+        ddot_ref = np.reshape(ddot_ref, [3, self.Tref], order='C')
         return ddot_ref
 
 
@@ -128,7 +136,7 @@ class linear_quad:
         Function to compute
         :return:
         """
-        return ddot_ref/np.linalg.norm(ddot_ref, axis=0)
+        return (ddot_ref/np.linalg.norm(ddot_ref, axis=0)).T
 
 
     def get_xb(self, yc, zb):
@@ -136,8 +144,10 @@ class linear_quad:
 
         :return:
         """
-        x = np.cross(yc, zb)
-        return x/np.linalg.norm(x)
+        x = []
+        for y, z in zip(yc, zb):
+            x.append(np.cross(y.flatten(), z.flatten()))
+        return np.vstack(x)/np.linalg.norm(np.vstack(x))
 
 
     def get_yb(self, zb, xb):
@@ -145,20 +155,27 @@ class linear_quad:
 
         :return:
         """
-        return np.cross(zb, xb)  # For each time step has to be done
+        r = []
+        for z, x in zip(zb, xb):
+            r.append(np.cross(z.flatten(), x.flatten()))
+        return np.vstack(r)  # For each time step has to be done
 
 
-    def get_yc(self, Tref, num_waypt):
+    def get_yc(self, num_waypt):
         """
 
         :return:
         """
-        yaw = [np.poly1d(self.coeff_yaw[i, :]) for i in range(num_waypt)]
-        ref = sampler(yaw, Tref, num_waypt)
-        return np.array([[-np.sin(ref)], [np.cos(ref)], [np.zeros(Tref*num_waypt)]])
+        yaw = [np.poly1d(self.coeff_yaw[i, :].value) for i in range(num_waypt)]
+        ref = sampler(yaw, self.Tref, num_waypt, self.waypt)
+        ref = np.vstack(ref)
+        temp = np.stack([-np.sin(ref), np.cos(ref), np.zeros([self.Tref, 1])]).flatten()
+        temp = temp.reshape((3, self.Tref))
+        return temp.T
+        #return np.stack([-np.sin(ref), np.cos(ref), np.zeros([num_waypt, Tref])]).flatten()
 
 
-    def get_hw(self, ddot_ref, Tref, num_waypt, zb):
+    def get_hw(self, ddot_ref, num_waypt, zb):
         """
 
         :param self:
@@ -175,38 +192,41 @@ class linear_quad:
         dddot_z = [np.poly1d(dddot_coeff[2][i, :]) for i in range(num_waypt)]
 
         dddot_ref = []
-        dddot_ref.append(sampler(dddot_x, Tref, num_waypt))
-        dddot_ref.append(sampler(dddot_y, Tref, num_waypt))
-        dddot_ref.append(sampler(dddot_z, Tref, num_waypt))
+        dddot_ref.append(sampler(dddot_x, self.Tref, num_waypt, self.waypt))
+        dddot_ref.append(sampler(dddot_y, self.Tref, num_waypt, self.waypt))
+        dddot_ref.append(sampler(dddot_z, self.Tref, num_waypt, self.waypt))
 
         dddot_ref = np.vstack(dddot_ref).flatten()
-        dddot_ref = np.reshape(dddot_ref, [3, num_waypt * Tref], order='C')
-        return (dddot_ref - (dddot_coeff @ zb) @ zb)/np.linalg.norm(ddot_ref, axis=0)
+        dddot_ref = np.reshape(dddot_ref, [3, self.Tref], order='C')
+        prod = []
+        for a, b, c in zip(dddot_ref.T, zb, zb.T):
+            prod.append(a @ b * c)
+        return (dddot_ref - np.vstack(prod))/np.linalg.norm(ddot_ref, axis=0)
 
 
-    def intermediate_qt(self, Tref, num_waypt):
+    def intermediate_qt(self, num_waypt):
         """
         Function to compute intermediaries for going from flat outputs to states
         :return:
         """
-        T = self.get_T(Tref, num_waypt)
+        T = self.get_T(num_waypt)
         zb = self.get_zb(T)  # 2D array of size 3 x (num_waypt * Tref)
-        yc = self.get_yc(Tref, num_waypt)
+        yc = self.get_yc(num_waypt)
         xb = self.get_xb(yc, zb)
         yb = self.get_yb(zb, xb)
-        hw = self.get_hw(T, Tref, num_waypt, zb)
+        hw = self.get_hw(T, num_waypt, zb)
 
         return [xb, yb, zb, yc, T, hw]
 
 
-    def compute_states(self, coeff_x, coeff_y, coeff_z, coeff_yaw):
+    def compute_states(self, coeff_x, coeff_y, coeff_z, coeff_yaw, waypt, Tref):
         """
         Function takes in reference trajectories of flat outputs and computes
         the reference trajectories for quadrotor states
         :param ref: reference trajectory generated on flat outputs
         :return: x_traj
         """
-        if coeff_x or coeff_y or coeff_z or coeff_yaw is None:
+        if coeff_x is None or coeff_y is None or coeff_z is None or coeff_yaw is None:
             return "No reference polynomial coeff provided"
 
         else:
@@ -214,33 +234,71 @@ class linear_quad:
             self.coeff_y = coeff_y
             self.coeff_z = coeff_z
             self.coeff_yaw = coeff_yaw
+            self.waypt = waypt
+            self.Tref = Tref
 
             # Isolate outputs
-            Tref = 25
+            ts = np.array(self.waypt)
+            durations = ts[1:] - ts[:-1]
             num_waypt, order = self.coeff_x.shape
 
             # Call intermediate qt
-            xb, yb, zb, yc, T, hw = self.intermediate_qt(Tref, num_waypt)
+            xb, yb, zb, yc, T, hw = self.intermediate_qt(num_waypt)
             e3 = np.array([0, 0, 1])
-            zw = np.tile(e3, [num_waypt*Tref]).transpose()
+            zw = np.tile(e3, [num_waypt, self.Tref]).T
 
             # Compute full state
-            x_ref = [np.poly1d(self.coeff_x[i, :]) for i in range(num_waypt)]
+            x_ref = [np.poly1d(self.coeff_x[i, :].value) for i in range(num_waypt)]
+            x_ref = np.vstack(sampler(x_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
             dot_x = compute_coeff_deriv(self.coeff_x, 1, num_waypt)
             xdot_ref = [np.poly1d(dot_x[i, :]) for i in range(num_waypt)]
-            y_ref = [np.poly1d(self.coeff_y[i, :]) for i in range(num_waypt)]
+            xdot_ref = np.vstack(sampler(xdot_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
+            y_ref = [np.poly1d(self.coeff_y[i, :].value) for i in range(num_waypt)]
+            y_ref = np.vstack(sampler(y_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
             dot_y = compute_coeff_deriv(self.coeff_y, 1, num_waypt)
             ydot_ref = [np.poly1d(dot_y[i, :]) for i in range(num_waypt)]
-            z_ref = [np.poly1d(self.coeff_z[i, :]) for i in range(num_waypt)]
+            ydot_ref = np.vstack(sampler(ydot_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
+            z_ref = [np.poly1d(self.coeff_z[i, :].value) for i in range(num_waypt)]
+            z_ref = np.vstack(sampler(z_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
             dot_z = compute_coeff_deriv(self.coeff_z, 1, num_waypt)
             zdot_ref = [np.poly1d(dot_z[i, :]) for i in range(num_waypt)]
-            roll_ref = np.asin((zw.transpose() @ yb)/(np.cos(np.asin(zw.transpose @ xb))))  # phi
-            rolldot_ref = -yb @ hw
-            pitch_ref = -np.asin(zw.transpose @ xb)  # theta
-            pitchdot_ref = xb @ hw
-            yaw_ref = [np.poly1d(self.coeff_yaw[i, :]) for i in range(num_waypt)]
+            zdot_ref = np.vstack(sampler(zdot_ref, self.Tref, num_waypt, self.waypt)).flatten()
+            
+            # Introduce temp var
+            prod1 = []
+            prod2 = []
+            for z, y, x in zip(zw, yb, xb):
+                prod1.append(z @ y)
+                prod2.append(z @ x)
+            roll_ref = np.arcsin(np.vstack(prod1)*zb/(np.cos(np.arcsin(np.vstack(prod2)))))  # phi
+
+            print("Roll", roll_ref.shape)
+            # roll_ref = np.reshape(roll_ref, [Tref])
+            prod1 = []
+            prod2 = []
+            prod3 = []
+            for y, h, z, x in zip(yb, hw.T, zw, xb):
+                prod1.append(-y @ h)
+                prod2.append(z @ x)
+                prod3.append(x @ h)
+            rolldot_ref = np.vstack(prod1).flatten()
+
+            pitch_ref = -np.arcsin(np.vstack(prod2)).flatten()  # theta
+            # pitch_ref = np.reshape(pitch_ref, [num_waypt, Tref])
+
+            pitchdot_ref = np.vstack(prod3).flatten()
+
+            yaw_ref = [np.poly1d(self.coeff_yaw[i, :].value) for i in range(num_waypt)]
+            yaw_ref = np.vstack(sampler(yaw_ref, self.Tref, num_waypt, self.waypt)).flatten()
+
             dot_yaw = compute_coeff_deriv(self.coeff_yaw, 1, num_waypt)
-            yawdot_ref = [np.poly1d(dot_yaw[i, :]) for i in range(num_waypt)]  # zb @ yawdot @ zw ?? Check all the matmul
+            yawdot_ref = [np.poly1d(dot_yaw[i, :]) for i in range(num_waypt)]
+            yawdot_ref = np.vstack(sampler(yawdot_ref, self.Tref, num_waypt, self.waypt)).flatten()
 
             return [x_ref, xdot_ref, y_ref, ydot_ref, z_ref, zdot_ref, roll_ref, rolldot_ref, pitch_ref, pitchdot_ref, yaw_ref, yawdot_ref]
 

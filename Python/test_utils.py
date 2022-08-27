@@ -85,12 +85,14 @@ def sample_traj(A, B, Q, R, ctrl, T, x0=None, sigma=1):
     # Initialize variables
     p, q = B.shape
     xtraj = np.zeros((T+1, p))
+    print("Xtraj", xtraj.shape)
     utraj = np.zeros((T, q))
     rtraj = np.zeros(T)
 
     # Simulate forward
     x = x0.copy()
-    # print("init state", x)
+    print("init state", x)
+    print(xtraj[0].shape)
     xtraj[0] = x
     for t in range(T):
         u = ctrl(x)
