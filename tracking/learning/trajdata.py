@@ -19,8 +19,10 @@ class TrajDataset(Dataset):
             - rtraj:        np.array(N,), sequence of rewards
             - xtraj_:       np.array(N, p), sequence of next states
         '''
-        self.xtraj, self.utraj, self.rtraj, self.xtraj_ = \
-                xtraj, utraj, rtraj, xtraj_
+        self.xtraj = torch.tensor(xtraj)
+        self.utraj = torch.tensor(utraj)
+        self.rtraj = torch.tensor(rtraj)
+        self.xtraj_ = torch.tensor(xtraj_)
 
     def __len__(self):
         return len(self.xtraj)
@@ -29,8 +31,7 @@ class TrajDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        return torch.tensor(self.xtraj[idx]), torch.tensor(self.utraj[idx]), \
-                torch.tensor(self.rtraj[idx]), torch.tensor(self.xtraj_[idx])
+        return self.xtraj[idx], self.utraj[idx], self.rtraj[idx], self.xtraj_[idx]
 
     def cuda(self):
         self.xtraj = self.xtraj.cuda()
