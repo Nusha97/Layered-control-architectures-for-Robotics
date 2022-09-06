@@ -112,10 +112,13 @@ def generate(waypoints, ts, n, num_steps, p, P, rho, task='min-jerk'):
         ref:        reference trajectory
     '''
     objective, constr, ref, coeff = min_jerk_setup(waypoints, ts, n, p, num_steps)
-    P12 = P[0:p,p:]
-    P22 = P[p:,p:]
-    x0 = np.array(waypoints[0])
-    penalty = cp.quad_form(ref, P22) + 2 * x0 @ (P12@ref)
+    if P is None:
+        penalty = 0
+    else:
+        P12 = P[0:p,p:]
+        P22 = P[p:,p:]
+        x0 = np.array(waypoints[0])
+        penalty = cp.quad_form(ref, P22) + 2 * x0 @ (P12@ref)
     prob = cp.Problem(cp.Minimize(objective + rho * penalty), constr)
     prob.solve()
     if prob.status != cp.OPTIMAL:

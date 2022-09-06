@@ -31,3 +31,9 @@ class TrajDataset(Dataset):
 
         return torch.tensor(self.xtraj[idx]), torch.tensor(self.utraj[idx]), \
                 torch.tensor(self.rtraj[idx]), torch.tensor(self.xtraj_[idx])
+
+    def cuda(self):
+        self.xtraj = self.xtraj.cuda()
+        self.utraj = self.utraj.cuda()
+        self.rtraj = self.rtraj.cuda()
+        self.xtraj_ = self.xtraj_.cuda()
