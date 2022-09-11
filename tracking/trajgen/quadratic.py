@@ -9,6 +9,7 @@ def _continuity_constr(n, order, coeff1, coeff2, x_wp, T1):
     Input:
         - n:        Integer, order of the polynomial
         - order:    Integer, order of continuity enforced
+        poly_order = coeff
         - coeff1:   cp.Variable, coefficients of polynomial p_1
         - coeff2:   cp.Variable, coefficients of polynomial p_2
         - x_wp:     Float, waypoint
@@ -29,7 +30,7 @@ def _continuity_constr(n, order, coeff1, coeff2, x_wp, T1):
     # Continuity constraint
     cont_constr = [
             _diff_coeff(n, T1, i) @ coeff1 == _diff_coeff(n, 0, i) @ coeff2 \
-            for i in range(1, order)
+            for i in range(1, order+1)
     ]
     return wp_constr + cont_constr
 
@@ -73,7 +74,7 @@ def min_jerk_1d(waypoints, ts, n, num_steps):
     # Compute objective
     for i in range(len(waypoints)-1):
         H = _cost_matrix(n, 3, durations[i])
-        objective += cp.quad_form(coeff[i], H)
+        objective += cp.quad_form(coeff[i], H / 10000)
     # Boundary conditions
     constr += _boundary_cond(n, coeff[0], [waypoints[0], 0, 0], 0)
     constr += _boundary_cond(n, coeff[-1], [waypoints[-1], 0, 0], durations[-1])
