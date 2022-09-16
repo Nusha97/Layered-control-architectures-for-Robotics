@@ -27,10 +27,14 @@ class MinJerkReg(nn.Module):
         for pp in range(p):
             cost += torch.dot(self.coeff[pp].reshape(-1),
                               self.cost_mat @ self.coeff[pp].reshape(-1))
+            #print('Jerk penalty is {:10.3f}'.format(cost))
         # Compute regularizer
         if self.regularizer is not None:
             ref = coeff2traj(self.coeff, self.ts, num_steps)[1].T.flatten()
+            reg = self.regularizer.pred(x0, ref)[0]
             cost += rho *  self.regularizer.pred(x0, ref)[0]
+        #print('Regularizer is {:10.3f} x {:6.3f}'.format(reg, rho))
+        #print('-'*20)
         return cost
 
 def coeff2traj(coeffs, ts, numsteps, fullstate=True):
@@ -72,7 +76,7 @@ def generate(waypoints, ts, order, num_steps, p, rho, value_func, coeff0,
         - num_iter:     Integer, number of GD steps
     '''
     costfn = MinJerkReg(ts, order, value_func, coeff0)
-    optimizer = optim.SGD(costfn.parameters(), lr=lr)
+    optimizer = optim.SGD(costfn.parameters(), lr=lr, momentum=0.9)
     x0 = torch.zeros(14)
     x0[:3] = waypoints[:3, 0]
     x0[-2] = waypoints[3, 0]

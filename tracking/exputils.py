@@ -5,12 +5,13 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 
 def relerr(A, Ahat):
     """ computes relative error of two matrices in terms of frobenius norm """
     return np.linalg.norm(A-Ahat, 'fro') / np.linalg.norm(A, 'fro')
 
-def moving_sum(x, window_size, gamma=1):
+def moving_sum(x, window_size, gamma=0.99):
     conv = np.convolve(x, gamma ** np.arange(window_size-1, -1, -1))
     return conv[window_size-1:-window_size+1]
 
@@ -31,8 +32,10 @@ def rostraj2aug(actual, ref, u, Tref, gamma):
     ''' Converts ros trajectories to the format we use for training '''
     T = actual.shape[0]
     # Compute cost
-    xcost = np.linalg.norm(actual[:,(0,1,2)] - ref[:,(0,1,2)], axis=1)**2 
-    ucost = 0.1 * np.linalg.norm(u, axis=1)**2
+    xcost = np.linalg.norm(actual[:,(0,1,2)] - ref[:,(0,1,2)], axis=1)**2
+    ucost = 0.0003 * np.linalg.norm(u, axis=1)**2
+    #print(xcost.mean())
+    #print(ucost.mean())
     # Cost from yaw (needs special treatment because quotient norm)
     ar = np.abs(actual[:, 12] - ref[:, 12])
     ra = np.abs(actual[:, 12] + 2*np.pi-ref[:,12])
@@ -56,3 +59,22 @@ def load_datasets(dsets, Tref, gamma):
         vtrajs.append(v[:-1, :])
     return np.vstack(xtrajs), np.vstack(xtrajs_), np.vstack(utrajs), \
             np.vstack(rtrajs), np.vstack(vtrajs)
+
+def merge_traj(trajs):
+    return [ np.vstack([t[i] for t in trajs]) for i in range(5) ]
+
+def evaltraj2training(filename, Tref, gamma):
+    a, r, i, timestamp = np.load(filename, allow_pickle=True)[0]
+    start = timestamp[0::2]
+    traj = load_datasets([[a,r,i]], Tref, gamma)
+    traj_trunc = [
+        np.vstack([traj[d][s-50:s+50] for s in start[:-1]]) for d in range(5)
+    ]
+    return traj_trunc
+
+def evalfolder2training(foldername, numrho, Tref, gamma):
+    trajs = []
+    for ind in range(numrho):
+        fn = foldername+'traj_ood{}.pkl'.format(ind)
+        trajs.append(evaltraj2training(fn, Tref, gamma))
+    return [ np.vstack([t[i] for t in trajs]) for i in range(5) ]
