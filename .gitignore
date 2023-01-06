@@ -1,5 +1,20 @@
 *.swp
 
+# MATLAB Files
+*.m
+
+# Old files used for testing min snap
+plan_opt.py
+path.mat
+my_video.avi
+my-file.html
+
+# Remove the previous Python files
+Python/
+
+# Don't push gitignore
+.gitignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
