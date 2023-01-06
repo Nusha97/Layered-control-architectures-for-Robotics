@@ -57,26 +57,28 @@ class NNValueFunc(ValueFunc):
         self.network = None
 
     def learn(self, dataset, gamma, num_epoch=100, lr=0.01, batch_size=64,
-              verbose=False, print_interval=10):
+              verbose=False, print_interval=10, beta=1):
         ''' The general training loop for NN value functions '''
         # Define loss function, optimizer and lr scheduler
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        lossfn = nn.MSELoss()
-        optimizer = optim.Adam(self.network.parameters(), lr=lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                  optimizer, num_epoch)
+        lossfn = nn.HuberLoss()
+        optimizer = optim.Adam(self.network.parameters(), lr=lr,
+                weight_decay=1e-2)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2,
+                gamma=0.99)
         # Training loop
         for epoch in range(num_epoch):
-            for x, _, r, x_ in dataloader:
+            for x, _, r, x_, v in dataloader:
                 self.network.zero_grad()
                 # Compute loss as the difference of prediction and target
                 pred = self.network(x)
                 target = r + gamma * self.network(x_)
-                loss = lossfn(pred, target)
+                loss = lossfn(pred, v) + beta * lossfn(pred, target)
                 # Update weights and learning rate
                 loss.backward()
                 optimizer.step()
-                scheduler.step()
+            scheduler.step()
+            #beta = beta * 1.005
             # Print out the loss if in verbose mode
             if(verbose and epoch % print_interval == 0):
                 print('Epoch: {} \t Training loss: {}'.format(epoch+1, loss.item()))
@@ -91,6 +93,11 @@ class NNValueFunc(ValueFunc):
         d0 = torch.cat([x0, ref]).double()
         return self.network(d0.unsqueeze(0))[0]
 
+    def cuda(self):
+        self.network.cuda()
+
+    def cpu(self):
+        self.network.cpu()
 
 class ICNNValueFunc(NNValueFunc):
     ''' Value functions parameterized as a convex neural network '''
@@ -110,6 +117,16 @@ class MLPValueFunc(NNValueFunc):
             - widths:       list of Integers indicating the width of each layer
         '''
         self.network = MLP(input_size, widths)
+
+
+class ConvValueFunc(NNValueFunc):
+    ''' Value functions paramterized as a multi-layer-perceptron '''
+    def __init__(self):
+        ''' Constructor
+        Parameters:
+            - widths:       list of Integers indicating the width of each layer
+        '''
+        self.network = ConvNet()
 
 
 ################################################################################
@@ -152,19 +169,46 @@ class ICNN(nn.Module):
         z = torch.exp(self.Wzs[-1]) @ z + self.Wys[-1] @ y_ + self.bs[-1]
         return torch.squeeze(z, 1)
 
+
 class MLP(nn.Module):
     ''' Multi-layer perceptron '''
     def __init__(self, input_size, widths):
         ''' Constructor '''
         super().__init__()
         # First layer
-        layers = [nn.Linear(input_size, widths[0]).double(), nn.ReLU()]
+        layers = [nn.Linear(input_size, widths[0]).double(), nn.GELU()]
         # Hidden layers
         for w1, w2 in zip(widths[0:-2], widths[1:-1]):
-            layers += [nn.Linear(w1, w2).double(), nn.ReLU()]
+            layers += [nn.Linear(w1, w2).double(), nn.GELU()]
         # Last layer
         layers.append(nn.Linear(widths[-2], widths[-1]).double())
         self.model = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.model(x)
+
+
+class ConvNet(nn.Module):
+    ''' Multi-layer perceptron '''
+    def __init__(self):
+        ''' Constructor '''
+        super().__init__()
+        # First Convolutional Layer
+        layers = [nn.Conv1d(1, 16, 14, stride=14, padding=0).double(),
+                  nn.GELU().double(),
+                  nn.Conv1d(16, 16, 14, stride=1, padding=0).double(),
+                  nn.GELU().double(),
+                  nn.Conv1d(16, 1, 14, stride=1, padding=0).double(),
+                  nn.GELU().double(),
+                  nn.MaxPool1d(5).double(),
+                  nn.Flatten(),
+                  nn.Linear(55, 55).double(),
+                  nn.GELU(),
+                  nn.Linear(55, 1).double()
+                 ]
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        out = self.model(x)
+        return out[:,0].unsqueeze(1)
