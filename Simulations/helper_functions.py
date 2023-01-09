@@ -39,7 +39,6 @@ def compute_cum_tracking_cost(ref_traj, actual_traj, Kp, Kd, N):
                   zip(actual_traj, ref_traj[:, 0:3], ref_traj[:, 3:])]
     xcost = [np.linalg.norm(actual_traj[i:i + N, :2] - ref_traj[i:i + N, :2], axis=1) ** 2 +
              angle_wrap(actual_traj[i:i + N, 2] - ref_traj[i:i + N, 2]) ** 2 for i in range(len(ref_traj) - N)]
-    # print(xcost)
 
     xcost.reverse()
     cost = []
