@@ -30,6 +30,38 @@ def compute_input(x, r, rdot, Kp, Kd):
     return np.array([v, w])
 
 
+def forward_simulate(x0, r, Kp, Kd, N):
+    """
+    Simulate the unicycle dynamical system for the given reference trajectory
+    :param x0: initial condition
+    :param r: reference trajectory
+    :param N: horizon of reference
+    :return:
+    """
+    # Compute rdot numerically
+    dt = 0.01
+    cur_ref = r[1:]
+    prev_ref = r[:-1]
+
+    rdot = np.zeros(r.shape)
+    x = np.zeros(r.shape)
+    xdot = np.zeros(r.shape)
+    x[0, :] = x0
+
+    rdot[1:, :] = (cur_ref - prev_ref)/dt
+    v, w = compute_input(x0, r[0, :], rdot[0, :], Kp, Kd)
+    xdot[0, :] = np.array([v * np.cos(x0[2]), v * np.sin(x0[2]), w])
+    for i in range(1, N):
+        x[i, :] = xdot[i-1, :] * dt
+        v, w = compute_input(x[i, :], r[i, :], rdot[i, :], Kp, Kd)
+        xdot[i, :] = np.array([v * np.cos(x[i, 2]), v * np.sin(x[i, 2]), w])
+
+    cost = np.linalg.norm(x[:, :2] - r[:, :2], axis=1) ** 2 + angle_wrap(x[:, 2] - r[:, 2]) ** 2
+    # Computing the cumulative cost with gamma
+    return list(accumulate(cost[::-1], lambda x, y: x * gamma + y))[-1], x
+    
+
+
 def angle_wrap(theta):
     return (theta + np.pi) % (2 * np.pi) - np.pi
 

@@ -15,7 +15,7 @@ VERSION
     0.0
 """
 from flax import linen as nn
-# from flax.training import checkpoints - need to install tensorflow
+from flax.training import checkpoints # need to install tensorflow
 import torch.utils.data as data
 import numpy as np
 import optax
@@ -111,7 +111,7 @@ def train_model(state, data_loader, num_epochs=100):
     return state
 
 
-def eval_model(state, data_loader):
+def eval_model(state, data_loader, batch_size):
     all_losses, batch_sizes = [], []
     for batch in data_loader:
         batch_loss = eval_step(state, batch)
@@ -119,31 +119,47 @@ def eval_model(state, data_loader):
         batch_sizes.append(batch[0].shape[0])
     # Weighted average since some batches might be smaller
     loss = sum([a*b for a, b in zip(all_losses, batch_sizes)]) / sum(batch_sizes)
-    print(f"Loss of the model: {100.0*loss:4.2f}%")
+    print(f"Loss of the model: {loss:4.2f}")
 
 
 def restore_checkpoint(state, workdir):
     return checkpoints.restore_checkpoint(workdir, state)
 
 
-def save_checkpoint(state, workdir):
-    checkpoints.save_checkpoint(workdir, state, step=0)
+def save_checkpoint(state, workdir, step=0):
+    checkpoints.save_checkpoint(workdir, state, step)
 
 
-def calculate_cost(data_state, state, params):
-    return jnp.array(state.apply_fn(params, data_state).ravel())
-
-
-def inference_step(state, data_state, data_cost):
+def inference_model(state, data_loader):
     """
-    At inference, we optimize for a reference trajectory that minimizes LQR cost + regularizer
+    At inference time, we evaluate the model on the holdout dataset
+    :return:
+    """
+    eval_model(state, data_loader, batch_size)
+
+
+def calculate_cost(data_state, init, goal, state, params):
+    pred = state.apply_fn(params, jnp.append(init, data_state)).ravel()
+    return pred[0] + jnp.linalg.norm(data_state[0:3] - init) ** 2#+ jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
+
+
+def test_model(trained_state, data_loader, batch_size):
+    """
+    At test time, we optimize for a reference trajectory that minimizes LQR cost + regularizer
     Need to add penalty for regularizer and change cost
     :return:
     """
-    print(calculate_cost(data_state, state, state.params))
-    solution = minimize(calculate_cost, data_state, args=(state, state.params), method="BFGS")
+    data_state, _, data_cost, _ = next(iter(data_loader))
+    solution = []
+    orig = []
+    for data, cost in zip(data_state, data_cost):
+        # print("Cost computed using the network", calculate_cost(data, trained_state, trained_state.params))
+        # print("True cost", cost)
+        solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="BFGS"))
+        orig.append(data)
     # Return new reference and cost
-    return solution.x, solution.fun
+    return solution, orig
+
 
 
 

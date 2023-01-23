@@ -81,7 +81,7 @@ class ILQR():
             """
             Cost function should be designed assuming the state (x) and action (r, rdot)
             :param params: weight matrices and PD gain constants
-            :param state: x, r
+            :param state: x
             :param action: r, rdot
             :param t: current time step
             :return: List of state, input, total_iter
@@ -181,10 +181,10 @@ def gen_uni_training_data(lqr_obj, iter_list, num_iter, state_dim, inp_dim, goal
 def unicycle(x, u, t):
     """
     Unicycle system
-    :param x:
-    :param u:
-    :param t:
-    :return:
+    :param x: States of the dynamical system
+    :param u: Control input to the system
+    :param t: Total time horizon
+    :return: xdot: Closed loop dynamical system of the unicycle with references
     """
     px, py, theta = x
     state_dim = 3

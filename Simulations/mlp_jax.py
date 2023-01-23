@@ -32,4 +32,4 @@ class MLP(nn.Module):
             x = self.linear[i](x)
             x = nn.gelu(x)
         x = self.linear2(x)
-        return x
+        return x ** 2
