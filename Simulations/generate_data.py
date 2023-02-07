@@ -27,6 +27,7 @@ from trajax.integrators import rk4
 
 import matplotlib.pyplot as plt
 import pickle
+from helper_functions import angle_wrap, forward_simulate
 
 
 def save_object(obj, filename):
@@ -44,9 +45,12 @@ class ILQR():
     Apply iterative LQR from trajax on any specified dynamical system
     """
 
-    def __init__(self, dynamics, maxiter=100):
+    def __init__(self, dynamics, maxiter=1000):
         self.maxiter = maxiter
         self.dynamics = dynamics
+        self.constraints_threshold = 1.0e-1
+        self.goal = None
+        self.horizon = None
 
 
     def discretize(self, type):
@@ -60,7 +64,7 @@ class ILQR():
         """
         Function to execute ilqr from trajax to generate reference trajectories
         :param true_params: Specify cost weights and gain constants of PD controller
-        :return:
+        :return: X, U, total_iter
         """
         dynamics = self.discretize('rk4')
         m = x0.shape[0]
@@ -68,11 +72,13 @@ class ILQR():
         if maxiter:
             self.maxiter = maxiter
 
-        horizon = U0.shape[0]
+        self.goal = goal
+
+        self.horizon = U0.shape[0]
 
         if m > 2:
             key = jax.random.PRNGKey(75493)
-            true_params = (np.eye(3), np.array([[10, 0, 0], [0, 10, 0], [0, 0, 100]])* np.eye(3), 0.1 * np.eye(3))
+            true_params = (2000 * np.eye(m), np.array([[100, 0, 0], [0, 100, 0], [0, 0, 1]]), 0.1 * np.eye(3))
             final_weight, stage_weight, cost_weight = true_params
         else:
             final_weight, stage_weight, cost_weight = true_params
@@ -81,101 +87,146 @@ class ILQR():
             """
             Cost function should be designed assuming the state (x) and action (r, rdot)
             :param params: weight matrices and PD gain constants
-            :param state: x
-            :param action: r, rdot
+            :param state: x, r
+            :param action: rdot
             :param t: current time step
             :return: List of state, input, total_iter
             """
             final_weight, stage_weight, cost_weight = params
 
-            # wrap to [-pi, pi]
-            def angle_wrap(theta):
-                return (theta + np.pi) % (2 * np.pi) - np.pi
-
             if m == 2:
                 state_err = state[0] - np.squeeze(action[0])
                 state_cost = stage_weight * state_err ** 2
                 action_cost = np.squeeze(action[1]) ** 2 * cost_weight
-                terminal_cost = final_weight * (state[0] - goal) ** 2
+                terminal_cost = final_weight * (state[0] - self.goal) ** 2
             else:
-                state_err = state - np.squeeze(action[0:m])
-                # val = state_err[m-1] - 2 * np.pi
-                # angle_err = angle_wrap(state_err[m-1])
-                # new_state_err = np.append(state_err[0:m-1], angle_err)
-                # err = np.where(val, new_state_err, state_err)
+                state_err = state[0:3] - state[3:]
                 state_cost = np.matmul(np.matmul(state_err, stage_weight), state_err)
-                # state_cost = np.matmul(np.matmul(state_err, stage_weight), state_err)
-                action_cost = np.matmul(np.matmul(np.squeeze(action[m:]), cost_weight), np.squeeze(action[m:]))
-                terminal_err = state - goal
+                action_cost = np.matmul(np.matmul(np.squeeze(action), cost_weight), np.squeeze(action))
+                terminal_err = state - self.goal
                 terminal_cost = np.matmul(np.matmul(terminal_err, final_weight), terminal_err)
 
-            return np.where(t == horizon, terminal_cost, state_cost + action_cost)
+            return np.where(t == self.horizon, terminal_cost, state_cost + action_cost)
 
-        X, U, _, _, _, _, total_iter = optimizers.ilqr(functools.partial(cost, true_params), dynamics, x0,
-                                                                    U0, self.maxiter)
+
+        def equality_constraint(x, u, t):
+            del u
+
+            # maximum constraint dimension across time steps
+            dim = 3
+
+            def goal_constraint(x):
+                err = x[0:3] - self.goal[0:3]
+                return err
+
+            return np.where(t == self.horizon, goal_constraint(x), np.zeros(dim))
+
+        X, U, _, _, _, _,_, _, _, _, _, total_iter = optimizers.constrained_ilqr(functools.partial(cost, true_params), dynamics, x0,
+                                    U0, equality_constraint=equality_constraint, constraints_threshold=self.constraints_threshold, maxiter_al=self.maxiter)
+        #X, U, _, _, _, _, total_iter = optimizers.ilqr(functools.partial(cost, true_params), dynamics, x0, U0, self.maxiter)
         return X, U, total_iter
 
 
-def gen_uni_training_data(lqr_obj, iter_list, num_iter, state_dim, inp_dim, goals=None, inits=None):
+def generate_polynomial_trajectory(start, end, T, order):
+    """
+    Generates a polynomial trajectory from start to end over time T
+    start: start state
+    end: end state
+    T: total time
+    order: order of the polynomial
+    """
+    # Define the time vector
+    t = onp.linspace(0, 1, T)
+    n = start.shape[0]
+
+    # Solve for the polynomial coefficients
+    coeffs = onp.zeros((order + 1, n))
+    for i in range(n):
+        coeffs[:, i] = onp.polyfit(t, t * (end[i] - start[i]) + start[i], order)
+
+    # Evaluate the polynomial at the desired time steps
+    polynomial = onp.zeros((T, n))
+    for i in range(n):
+        polynomial[:, i] = onp.polyval(coeffs[::-1, i], t)
+    trajectory = polynomial + start
+
+    return trajectory
+
+
+def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, inits=None):
     """
     Generate trajectories for training data
-    :param dynamics:
-    :param iter_list:
-    :param goals:
-    :param inits:
-    :return:
+    :param dynamics: Dynamics function to be passed to ILQR
+    :param goals: Set of goals generated using random generator
+    :param inits: Set of initial conditions to be tested on
+    :return: xtraj, rtraj, rdottraj, costs
     """
 
     horizon = 100
+    dt = 0.01
 
     xtraj = []
     rtraj = []
+    rdottraj = []
     costs = []
 
     if goals == None:
         key = jax.random.PRNGKey(89731203)
-        goal_xy = 19 * jax.random.normal(key, shape=(num_iter, 2))
-        goal_theta = jax.random.uniform(key, shape=(num_iter,), minval=0, maxval=2*np.pi)
+        goal_xy = jax.random.randint(key, shape=(num_iter, 2), minval=1, maxval=3)
+        goal_theta = onp.zeros(shape=(num_iter,))
         goal = np.append(goal_xy, goal_theta)
-        goals = np.reshape(goal, (num_iter, state_dim))
+        print(goal)
+        goals = np.reshape(goal, (num_iter, int(state_dim/2)), order='F')
+        print(goals)
 
     if inits == None:
         key = jax.random.PRNGKey(95123459)
-        init_xy = 28 * jax.random.normal(key, shape=(num_iter, 2))
-        init_theta = jax.random.uniform(key, shape=(num_iter,), minval=0, maxval=2 * np.pi)
+        init_xy = jax.random.randint(key, shape=(num_iter, 2), minval=0, maxval=2)
+        init_theta = onp.zeros(shape=(num_iter,))
         init = np.append(init_xy, init_theta)
-        inits = np.reshape(init, (num_iter, state_dim))
+        inits = np.reshape(init, (num_iter, int(state_dim/2)), order='F')
+        print(inits)
 
     for j in range(num_iter):
         tk_cost = 100
         it = 2
-        while tk_cost/horizon >= 0.15:
+        while tk_cost/horizon >= 0.1:
             if it > 1000:
                 break
-            x0 = inits[j, :]
+            x0 = np.append(inits[j, :], inits[j, :])
+            # U0 = np.zeros(shape=(horizon, inp_dim))
             U0 = np.zeros(shape=(horizon-1, inp_dim))
+            # U0 = np.array([np.polyval(np.array([(goals[j, 0]-inits[j, 0])/horizon, inits[j, 0]]), np.arange(horizon)),
+            #                np.polyval(np.array([(goals[j, 1]-inits[j, 1])/horizon, inits[j, 1]]), np.arange(horizon)),
+            #               jax.random.uniform(key, shape=(horizon,), minval=-np.pi, maxval=0)])
             if state_dim == 1:
                 goal = goals[j, 0]
                 U = np.append(np.array([0, inits[j, 1]]), U0)
             else:
-                goal = goals[j, :]
-                U = np.append(np.array([inits[j, :], np.zeros(state_dim)]), U0)
-            x, u, t_iter = lqr_obj.apply_ilqr(x0, np.reshape(U, (horizon, inp_dim)), goal, it)
-            tk_cost = np.linalg.norm(x[:-1, 0:state_dim]-u[:, 0:state_dim]) # + np.linalg.norm(x[-1, 0:state_dim] - goal)
+                goal = np.append(goals[j, :], goals[j, :])
+                U = np.append(U0, goals[j, :])
+                U = np.reshape(U, (horizon, inp_dim))
+                # U = U0.T
+            x, u, t_iter = lqr_obj.apply_ilqr(x0, U, goal, it)
             it *= 5
+
+            r_int = x[:-1, 3:] + u * dt
+            r_int = onp.vstack([x0[0:3], r_int])
+            tk_cost = np.linalg.norm(x[:, 0:3] - r_int)
+
 
             if tk_cost > 500:
                 continue
 
-            xtraj.append(x)
-            rtraj.append(u)
+            xtraj.append(x[:, 0:3])
+            rtraj.append(r_int)
+            rdottraj.append(onp.vstack([inits[j, :], u]))
+            print(len(rdottraj))
             costs.append(tk_cost)
 
             print(tk_cost)
-            # plt.plot(x[:, 0], 'b-', u[:, 0], 'r--')
-            # plt.show()
 
-    return xtraj, rtraj, costs
+    return xtraj, rtraj, rdottraj, costs
 
 
 def unicycle(x, u, t):
@@ -186,14 +237,19 @@ def unicycle(x, u, t):
     :param t: Total time horizon
     :return: xdot: Closed loop dynamical system of the unicycle with references
     """
-    px, py, theta = x
-    state_dim = 3
-    F = np.array([[np.cos(theta), 0], [np.sin(theta), 0], [0, 1]])
-    Kp = np.array([[2, 0, 0], [0, 1, 0]])
-    key = jax.random.PRNGKey(793)
-    Kd = jax.random.uniform(key=key, shape=(2, 3))
-    # x_dev = x[0:3] - np.squeeze(u[0:3])
-    x_dev = x - np.squeeze(u[0:state_dim])
+    px, py, theta = x[0:3]
+    theta = angle_wrap(theta)
 
-    v1 = np.matmul(np.matmul(F, np.linalg.inv(np.eye(2) - np.matmul(Kd, F))), np.matmul(Kp, x_dev) - np.matmul(Kd, np.squeeze(u[3:])))
-    return np.array(v1)
+    state_dim = 6
+    input_dim = 3
+
+    F = np.array([[np.cos(theta), 0], [np.sin(theta), 0], [0, 1]])
+    Kp = 50 * np.array([[2, 1, 0], [0, 1, 3]])
+    key = jax.random.PRNGKey(793)
+    Kd = 50 * jax.random.uniform(key=key, shape=(2, 3))
+
+    x_dev = x[0:3] - x[3:]
+
+    v1 = np.matmul(np.matmul(F, np.linalg.inv(np.eye(2) - np.matmul(Kd, F))), np.matmul(Kp, x_dev) - np.matmul(Kd, np.squeeze(u)))
+    return np.append(v1, np.squeeze(u))
+

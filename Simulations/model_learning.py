@@ -140,7 +140,7 @@ def inference_model(state, data_loader):
 
 def calculate_cost(data_state, init, goal, state, params):
     pred = state.apply_fn(params, jnp.append(init, data_state)).ravel()
-    return pred[0] + jnp.linalg.norm(data_state[0:3] - init) ** 2#+ jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
+    return 0.1 * pred[0] + jnp.linalg.norm(data_state[0:3] - init) ** 2 #+ jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
 
 
 def test_model(trained_state, data_loader, batch_size):
@@ -155,7 +155,8 @@ def test_model(trained_state, data_loader, batch_size):
     for data, cost in zip(data_state, data_cost):
         # print("Cost computed using the network", calculate_cost(data, trained_state, trained_state.params))
         # print("True cost", cost)
-        solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="BFGS"))
+        print("Shape of data", data.shape)
+        solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="CG"))
         orig.append(data)
     # Return new reference and cost
     return solution, orig

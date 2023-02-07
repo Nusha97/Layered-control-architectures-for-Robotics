@@ -30,6 +30,22 @@ def compute_input(x, r, rdot, Kp, Kd):
     return np.array([v, w])
 
 
+def compute_rdot(ref, dt):
+    """
+    Return the numerical differentiation of ref
+    :param ref:
+    :param dt:
+    :return:
+    """
+    cur_ref = ref[1:]
+    prev_ref = ref[:-1]
+    rdot = np.zeros(ref.shape)
+    rdot[1:, :] = (cur_ref - prev_ref) / dt
+
+    return rdot
+
+
+
 def forward_simulate(x0, r, Kp, Kd, N):
     """
     Simulate the unicycle dynamical system for the given reference trajectory
@@ -52,7 +68,7 @@ def forward_simulate(x0, r, Kp, Kd, N):
     v, w = compute_input(x0, r[0, :], rdot[0, :], Kp, Kd)
     xdot[0, :] = np.array([v * np.cos(x0[2]), v * np.sin(x0[2]), w])
     for i in range(1, N):
-        x[i, :] = xdot[i-1, :] * dt
+        x[i, :] = x[i-1, :] + xdot[i-1, :] * dt
         v, w = compute_input(x[i, :], r[i, :], rdot[i, :], Kp, Kd)
         xdot[i, :] = np.array([v * np.cos(x[i, 2]), v * np.sin(x[i, 2]), w])
 
@@ -64,6 +80,24 @@ def forward_simulate(x0, r, Kp, Kd, N):
 
 def angle_wrap(theta):
     return (theta + np.pi) % (2 * np.pi) - np.pi
+
+
+def compute_tracking_cost(ref_traj, actual_traj, rdot_traj, Kp, Kd, N):
+    input_traj = []
+    for i in range(len(ref_traj)):
+        input_traj.append(compute_input(actual_traj[i, :], ref_traj[i, :], rdot_traj[i, :], Kp, Kd))
+    # input_traj = [compute_input(x, r, rdot, Kp, Kd) for x, r, rdot in
+    #              zip(actual_traj, ref_traj, rdot_traj)]
+    xcost = [np.linalg.norm(actual_traj[i:i + N, :2] - ref_traj[i:i + N, :2], axis=1) ** 2 +
+             angle_wrap(actual_traj[i:i + N, 2] - ref_traj[i:i + N, 2]) ** 2 for i in range(len(ref_traj) - N)]
+
+    xcost.reverse()
+    cost = []
+    for i in range(len(ref_traj) - N):
+        tot = list(accumulate(xcost[i], lambda x, y: x * gamma + y))
+        cost.append(tot[-1])
+    cost.reverse()
+    return np.vstack(cost), np.vstack(input_traj)
 
 
 def compute_cum_tracking_cost(ref_traj, actual_traj, Kp, Kd, N):
