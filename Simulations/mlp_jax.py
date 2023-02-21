@@ -30,6 +30,6 @@ class MLP(nn.Module):
     def __call__(self, x):
         for i in range(len(self.num_hidden)):
             x = self.linear[i](x)
-            x = nn.gelu(x)
+            x = nn.elu(x)
         x = self.linear2(x)
         return x ** 2

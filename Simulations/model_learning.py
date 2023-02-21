@@ -29,6 +29,14 @@ from torch.utils.data import Dataset
 import torch
 import cvxpy as cp
 from jax.scipy.optimize import minimize
+from jaxopt import ProjectedGradient
+from jaxopt.projection import projection_non_negative
+from jax import grad, jit
+from jaxopt import LBFGS
+from torch.utils.tensorboard import SummaryWriter
+
+
+writer = SummaryWriter()
 
 
 class TrajDataset(Dataset):
@@ -75,6 +83,7 @@ def calculate_loss(state, params, batch):
 
     # Calculate the loss
     loss = optax.l2_loss(pred.ravel(), target.ravel()).mean()
+
     return loss
 
 
@@ -103,11 +112,16 @@ def eval_step(state, batch):
 
 def train_model(state, data_loader, num_epochs=100):
     # Training loop
+    count = 0
     for epoch in tqdm(range(num_epochs)):
+        epoch_loss = 0
         for batch in data_loader:
+            count += 1
             state, loss = train_step(state, batch)
             # We could use the loss and accuracy for logging here, e.g. in TensorBoard
             # For simplicity, we skip this part here
+            epoch_loss += loss
+            writer.add_scalar('Train loss', np.array(epoch_loss), count)
     return state
 
 
@@ -119,6 +133,7 @@ def eval_model(state, data_loader, batch_size):
         batch_sizes.append(batch[0].shape[0])
     # Weighted average since some batches might be smaller
     loss = sum([a*b for a, b in zip(all_losses, batch_sizes)]) / sum(batch_sizes)
+    # writer.add_scalar('Train batch loss', np.array(loss), count)
     print(f"Loss of the model: {loss:4.2f}")
 
 
@@ -140,7 +155,72 @@ def inference_model(state, data_loader):
 
 def calculate_cost(data_state, init, goal, state, params):
     pred = state.apply_fn(params, jnp.append(init, data_state)).ravel()
-    return 0.1 * pred[0] + jnp.linalg.norm(data_state[0:3] - init) ** 2 #+ jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
+    len = data_state.shape[0]
+    sum = 0
+    for i in range(3, len-3):
+        sum += jnp.linalg.norm(data_state[i:i + 3] - data_state[i - 3:i]) ** 2
+    return pred[0] #+ jnp.linalg.norm(data_state[0:3] - init) ** 2 # + jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
+
+
+
+def gradient_descent(func, data_state, init, goal, state, params, init_params, learning_rate=0.001, num_iters=100):
+    # Define the gradient of the function using JAX's `grad` function
+    grad_func = grad(func)
+
+    # Define a JIT-compiled version of the gradient descent update step
+    @jit
+    def update(ref, i):
+        gradient = grad_func(data_state, init, goal, state, params)
+        return ref - learning_rate * gradient
+
+    # Perform gradient descent by iteratively updating the parameters
+    ref = init_params
+    for i in range(num_iters):
+        ref = update(ref, i)
+
+    return ref
+
+
+def line_search(func, data_state, init, goal, state, params, grad_func, ref, direction, alpha=0.1, beta=0.5, max_iters=100):
+    # Initialize step size as 1
+    t = 1.0
+
+    # Perform line search
+    for i in range(max_iters):
+        # Evaluate the function and gradient at the current parameters
+        f = func(data_state, init, goal, state, params)
+        grad_f = grad_func(data_state, init, goal, state, params)
+
+        # Update parameters in the search direction
+        next_ref = ref + t * direction
+
+        # Check the Armijo condition
+        if func(next_ref, init, goal, state, params) > f + alpha * t * jnp.dot(grad_f, direction):
+            t *= beta
+        else:
+            return t
+
+
+def gradient_descent_with_line_search(func, data_state, init, goal, state, params, init_params, learning_rate=0.0001, num_iters=100):
+    # Define the gradient of the function using JAX's `grad` function
+    grad_func = grad(func)
+
+    # Define a JIT-compiled version of the gradient descent update step
+    @jax.jit
+    def update(ref):
+        # del i
+        gradient = grad_func(data_state, init, goal, state, params)
+        direction = -gradient
+        #step_size = line_search(func, data_state, init, goal, state, params, grad_func, ref, direction)
+        step_size = 1
+        return ref + step_size * direction
+
+    # Perform gradient descent by iteratively updating the parameters
+    ref = init_params
+    for i in range(num_iters):
+        ref = update(ref)
+
+    return ref
 
 
 def test_model(trained_state, data_loader, batch_size):
@@ -152,14 +232,28 @@ def test_model(trained_state, data_loader, batch_size):
     data_state, _, data_cost, _ = next(iter(data_loader))
     solution = []
     orig = []
+    jax_sol = []
     for data, cost in zip(data_state, data_cost):
         # print("Cost computed using the network", calculate_cost(data, trained_state, trained_state.params))
         # print("True cost", cost)
         print("Shape of data", data.shape)
-        solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="CG"))
+        # pg = ProjectedGradient(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), projection=projection_non_negative)
+        # pg.run()
+
+        """w_init = data[3:]
+        lbfgsb = ScipyBoundedMinimize(fun=calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="l-bfgs-b")
+        lower_bounds = jnp.zeros_like(w_init)
+        upper_bounds = jnp.ones_like(w_init) * jnp.inf
+        bounds = (lower_bounds, upper_bounds)
+        lbfgsb_sol = lbfgsb.run(w_init, bounds=bounds, data=(data[:3], cost)).params
+        jax_sol.append(lbfgsb_sol)"""
+        GD = LBFGS(calculate_cost)
+        solution.append(GD.run(data[3:], data[0:3], data[-3:], trained_state, trained_state.params))
+        # solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="BFGS"))
+        # solution.append(ScipyMinimize(calculate_cost, method="BFGS", data[3:], data[0:3], data[-3:], trained_state, trained_state.params))
         orig.append(data)
     # Return new reference and cost
-    return solution, orig
+    return jax_sol, solution, orig
 
 
 

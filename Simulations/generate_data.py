@@ -27,7 +27,11 @@ from trajax.integrators import rk4
 
 import matplotlib.pyplot as plt
 import pickle
-from helper_functions import angle_wrap, forward_simulate
+from helper_functions import angle_wrap, compute_rdot
+
+from itertools import accumulate
+
+gamma = 0.99
 
 
 def save_object(obj, filename):
@@ -78,8 +82,8 @@ class ILQR():
 
         if m > 2:
             key = jax.random.PRNGKey(75493)
-            true_params = (2000 * np.eye(m), np.array([[100, 0, 0], [0, 100, 0], [0, 0, 1]]), 0.1 * np.eye(3))
-            final_weight, stage_weight, cost_weight = true_params
+            true_param = (2000 * np.eye(m), np.array([[100, 0, 0], [0, 100, 0], [0, 0, 1]]), 0.1 * np.eye(3))
+            final_weight, stage_weight, cost_weight = true_param
         else:
             final_weight, stage_weight, cost_weight = true_params
 
@@ -121,7 +125,7 @@ class ILQR():
 
             return np.where(t == self.horizon, goal_constraint(x), np.zeros(dim))
 
-        X, U, _, _, _, _,_, _, _, _, _, total_iter = optimizers.constrained_ilqr(functools.partial(cost, true_params), dynamics, x0,
+        X, U, _, _, _, _,_, _, _, _, _, total_iter = optimizers.constrained_ilqr(functools.partial(cost, true_param), dynamics, x0,
                                     U0, equality_constraint=equality_constraint, constraints_threshold=self.constraints_threshold, maxiter_al=self.maxiter)
         #X, U, _, _, _, _, total_iter = optimizers.ilqr(functools.partial(cost, true_params), dynamics, x0, U0, self.maxiter)
         return X, U, total_iter
@@ -172,7 +176,7 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
 
     if goals == None:
         key = jax.random.PRNGKey(89731203)
-        goal_xy = jax.random.randint(key, shape=(num_iter, 2), minval=1, maxval=3)
+        goal_xy = jax.random.uniform(key, shape=(num_iter, 2), minval=1, maxval=3)
         goal_theta = onp.zeros(shape=(num_iter,))
         goal = np.append(goal_xy, goal_theta)
         print(goal)
@@ -181,13 +185,15 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
 
     if inits == None:
         key = jax.random.PRNGKey(95123459)
-        init_xy = jax.random.randint(key, shape=(num_iter, 2), minval=0, maxval=2)
-        init_theta = onp.zeros(shape=(num_iter,))
+        init_xy = jax.random.uniform(key, shape=(num_iter, 2), minval=0, maxval=2)
+        # init_theta = onp.zeros(shape=(num_iter,))
+        init_theta = jax.random.uniform(key, shape=(num_iter, ), minval=0, maxval=np.pi)
         init = np.append(init_xy, init_theta)
         inits = np.reshape(init, (num_iter, int(state_dim/2)), order='F')
         print(inits)
 
     for j in range(num_iter):
+
         tk_cost = 100
         it = 2
         while tk_cost/horizon >= 0.1:
@@ -215,6 +221,7 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
             tk_cost = np.linalg.norm(x[:, 0:3] - r_int)
 
 
+
             if tk_cost > 500:
                 continue
 
@@ -226,7 +233,43 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
 
             print(tk_cost)
 
+            """# Generate polynomial trajectory with an order
+            r_poly = generate_polynomial_trajectory(inits[j, :], goals[j, :], horizon + 1, 3)
+            # r_poly = np.append(r_poly)
+            # r_poly = np.reshape(r_poly, (horizon+1, 3), order='F')
+            # print(r_poly)
+            rtraj.append(r_poly)
+            c, true_x = forward_simulate(inits[j, :], r_poly, horizon + 1)
+            xtraj.append(true_x)
+            rdottraj.append(compute_rdot(r_poly, dt))
+            tk_cost = np.linalg.norm(true_x - r_poly)
+
+            print(tk_cost)"""
+
     return xtraj, rtraj, rdottraj, costs
+
+
+def unicycle_K(x, u, t):
+    """
+    Unicycle system controlled only by a P controller
+    :param x: States of the dynamical system (x, y, theta)
+    :param u: Control input (v, w)
+    :param t: time horizon
+    :return: xdot
+    """
+    del t
+    px, py, theta = x[0:3]
+    theta = angle_wrap(theta)
+    state_dim = 6
+    input_dim = 3
+
+    x_dev = x[0:3] - x[3:]
+
+    F = np.array([[np.cos(theta), 0], [np.sin(theta), 0], [0, 1]])
+    Kp = 5 * np.array([[2, 1, 0], [0, 1, 3]])
+    Kd = np.linalg.pinv(F)
+
+    return np.append(np.matmul(F, np.matmul(Kd, np.squeeze(u)) + np.matmul(Kp, x_dev)), np.squeeze(u))
 
 
 def unicycle(x, u, t):
@@ -237,6 +280,7 @@ def unicycle(x, u, t):
     :param t: Total time horizon
     :return: xdot: Closed loop dynamical system of the unicycle with references
     """
+    del t
     px, py, theta = x[0:3]
     theta = angle_wrap(theta)
 
@@ -252,4 +296,40 @@ def unicycle(x, u, t):
 
     v1 = np.matmul(np.matmul(F, np.linalg.inv(np.eye(2) - np.matmul(Kd, F))), np.matmul(Kp, x_dev) - np.matmul(Kd, np.squeeze(u)))
     return np.append(v1, np.squeeze(u))
+
+
+
+def forward_simulate(x0, r, N):
+    """
+    Simulate the unicycle dynamical system for the given reference trajectory
+    :param x0: initial condition
+    :param r: reference trajectory
+    :param N: horizon of reference
+    :return:
+    """
+    # Compute rdot numerically
+    dt = 0.01
+    cur_ref = r[1:]
+    prev_ref = r[:-1]
+
+    rdot = onp.zeros(r.shape)
+    x = onp.zeros(r.shape)
+    xdot = onp.zeros(r.shape)
+    x[0, :] = x0
+
+    rdot[1:, :] = (cur_ref - prev_ref)/dt
+    # v, w = compute_input(x0, r[0, :], rdot[0, :], Kp, Kd)
+    # xdot[0, :] = np.array([v * np.cos(x0[2]), v * np.sin(x0[2]), w])
+    temp = unicycle_K(onp.append(x0, r[0, :]), r[0, :], 10)
+    xdot[0, :] = temp[0:3]
+    for i in range(1, N):
+        x[i, :] = x[i-1, :] + xdot[i-1, :] * dt
+        # v, w = compute_input(x[i, :], r[i, :], rdot[i, :], Kp, Kd)
+        # xdot[i, :] = np.array([v * np.cos(x[i, 2]), v * np.sin(x[i, 2]), w])
+        temp = unicycle_K(onp.append(x[i, :], r[i, :]), r[i, :], 10)
+        xdot[i, :] = temp[0:3]
+
+    cost = onp.linalg.norm(x[:, :2] - r[:, :2], axis=1) ** 2 + angle_wrap(x[:, 2] - r[:, 2]) ** 2
+    # Computing the cumulative cost with gamma
+    return list(accumulate(cost[::-1], lambda x, y: x * gamma + y))[-1], x
 
