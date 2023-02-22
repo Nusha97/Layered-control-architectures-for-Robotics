@@ -153,24 +153,24 @@ def inference_model(state, data_loader):
     eval_model(state, data_loader, batch_size)
 
 
-def calculate_cost(data_state, init, goal, state, params):
-    pred = state.apply_fn(params, jnp.append(init, data_state)).ravel()
-    len = data_state.shape[0]
+def calculate_cost(ref, init, goal, state, params):
+    pred = state.apply_fn(params, jnp.append(init, ref)).ravel()
+    len = ref.shape[0]
     sum = 0
     for i in range(3, len-3):
-        sum += jnp.linalg.norm(data_state[i:i + 3] - data_state[i - 3:i]) ** 2
-    return pred[0] #+ jnp.linalg.norm(data_state[0:3] - init) ** 2 # + jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
+        sum += jnp.linalg.norm(ref[i:i + 3] - ref[i - 3:i]) ** 2
+    return pred[0] #sum #+ jnp.linalg.norm(data_state[0:3] - init) ** 2 # + jnp.linalg.norm(data_state[-3:] - goal) ** 2  # Adding terminal state constraint to the objective function
 
 
 
-def gradient_descent(func, data_state, init, goal, state, params, init_params, learning_rate=0.001, num_iters=100):
+def gradient_descent(func, init, goal, state, params, init_params, learning_rate=0.001, num_iters=100):
     # Define the gradient of the function using JAX's `grad` function
     grad_func = grad(func)
 
     # Define a JIT-compiled version of the gradient descent update step
     @jit
     def update(ref, i):
-        gradient = grad_func(data_state, init, goal, state, params)
+        gradient = grad_func(ref, init, goal, state, params)
         return ref - learning_rate * gradient
 
     # Perform gradient descent by iteratively updating the parameters
@@ -181,38 +181,37 @@ def gradient_descent(func, data_state, init, goal, state, params, init_params, l
     return ref
 
 
-def line_search(func, data_state, init, goal, state, params, grad_func, ref, direction, alpha=0.1, beta=0.5, max_iters=100):
+def line_search(func, init, goal, state, params, grad_func, ref, direction, alpha=0.1, beta=0.5, max_iters=100):
     # Initialize step size as 1
     t = 1.0
 
     # Perform line search
     for i in range(max_iters):
         # Evaluate the function and gradient at the current parameters
-        f = func(data_state, init, goal, state, params)
-        grad_f = grad_func(data_state, init, goal, state, params)
+        f = func(ref, init, goal, state, params)
+        grad_f = grad_func(ref, init, goal, state, params)
 
         # Update parameters in the search direction
         next_ref = ref + t * direction
 
         # Check the Armijo condition
-        if func(next_ref, init, goal, state, params) > f + alpha * t * jnp.dot(grad_f, direction):
-            t *= beta
-        else:
-            return t
+        return np.where(func(next_ref, init, goal, state, params) <= f + alpha * t * jnp.dot(grad_f, direction), t, beta * t)
+        #if func(next_ref, init, goal, state, params) > f + alpha * t * jnp.dot(grad_f, direction):
+        #    t *= beta
+        #else:
+        #    return t
 
 
-def gradient_descent_with_line_search(func, data_state, init, goal, state, params, init_params, learning_rate=0.0001, num_iters=100):
+def gradient_descent_with_line_search(func, init_params, init, goal, state, params, learning_rate=0.0001, num_iters=100):
     # Define the gradient of the function using JAX's `grad` function
     grad_func = grad(func)
 
     # Define a JIT-compiled version of the gradient descent update step
     @jax.jit
     def update(ref):
-        # del i
-        gradient = grad_func(data_state, init, goal, state, params)
+        gradient = grad_func(ref, init, goal, state, params)
         direction = -gradient
-        #step_size = line_search(func, data_state, init, goal, state, params, grad_func, ref, direction)
-        step_size = 1
+        step_size = line_search(func, init, goal, state, params, grad_func, ref, direction)
         return ref + step_size * direction
 
     # Perform gradient descent by iteratively updating the parameters

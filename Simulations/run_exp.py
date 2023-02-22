@@ -49,13 +49,13 @@ def data_generation(num_iter, file_path):
 
 
 # Create augmented states and the dataset
-def make_dataset(N, ref_traj, actual_traj, rdot_traj, horizon=101):
+def make_dataset(N, ref_traj, actual_traj, rdot_traj, rho=1, horizon=101):
     q = 2
     p = 3 + 3 * N
     traj_len = ref_traj.shape[0]
     num_iter = int(traj_len / horizon)
 
-    cost_traj, input_traj = compute_tracking_cost(ref_traj, actual_traj, rdot_traj, Kp, N, horizon)
+    cost_traj, input_traj = compute_tracking_cost(ref_traj, actual_traj, rdot_traj, Kp, N, horizon, rho)
 
     aug_state = []
     for i in range(num_iter):
@@ -79,8 +79,8 @@ def make_dataset(N, ref_traj, actual_traj, rdot_traj, horizon=101):
     return dataset
 
 
-def load_model():
-    with open(r"/home/anusha/Research/Layered-architecture-quadrotor-control/Simulations/data/params.yaml") as f:
+def load_model(file_path):
+    with open(file_path) as f:
         yaml_data = yaml.load(f, Loader=yaml.RoundTripLoader)
 
 
@@ -111,12 +111,15 @@ def load_model():
 def main():
 
     num_iter = 10000
-    file_path = r"/home/anusha/Research/Layered-architecture-quadrotor-control/Simulations/data/uni_train-nonoise3.pkl"
+    N = 100
+    horizon = 101
+
+    file_path = r"./data/unicycle_train.pkl"
     ref_traj, actual_traj, rdot_traj = data_generation(num_iter, file_path)
 
-    train_dataset = make_dataset(50, ref_traj, actual_traj, rdot_traj, 101)
+    train_dataset = make_dataset(N, ref_traj, actual_traj, rdot_traj, horizon)
 
-    model, batch_size, model_state, num_epochs = load_model()
+    model, batch_size, model_state, num_epochs = load_model(r"./data/params.yaml")
 
     train_data_loader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=numpy_collate)
     trained_model_state = train_model(model_state, train_data_loader, num_epochs=num_epochs)
@@ -126,9 +129,9 @@ def main():
     trained_model = model.bind(trained_model_state.params)
 
     # Inference
-    ref_traj, actual_traj, rdot_traj = data_generation(num_iter=1000, file_path=)
+    ref_traj, actual_traj, rdot_traj = data_generation(num_iter=1000, file_path=r"./data/unicycle_inference.pkl")
 
-    test_dataset = make_dataset(5, ref_traj, actual_traj, rdot_traj, 101)
+    test_dataset = make_dataset(N, ref_traj, actual_traj, rdot_traj, horizon)
 
     test_data_loader = data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=numpy_collate)
     eval_model(trained_model_state, test_data_loader, batch_size)
@@ -141,9 +144,23 @@ def main():
         out.append(trained_model(data_input))
         true.append(cost)
 
+    out = np.vstack(out)
+    true = np.vstack(true)
 
+    plt.figure()
+    plt.plot(out.ravel(), 'b-', label="Predictions")
+    plt.plot(true.ravel(), 'r--', label="Actual")
+    plt.legend()
+    plt.title("MLP with JAX on hold out data")
+    plt.savefig("./data/inference.png")
+    plt.show()
 
     # Testing new references
+
+
+
+if __name__ == '__main__':
+    main()
 
 
 
