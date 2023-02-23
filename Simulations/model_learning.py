@@ -30,7 +30,7 @@ import torch
 import cvxpy as cp
 from jax.scipy.optimize import minimize
 from jaxopt import ProjectedGradient
-from jaxopt.projection import projection_non_negative
+from jaxopt.projection import projection_affine_set
 from jax import grad, jit
 from jaxopt import LBFGS
 from torch.utils.tensorboard import SummaryWriter
@@ -232,6 +232,11 @@ def test_model(trained_state, data_loader, batch_size):
     solution = []
     orig = []
     jax_sol = []
+
+    def calc_cost_GD(ref):
+        pred = trained_state.apply_fn(trained_state.params, ref).ravel()
+        return pred[0]
+
     for data, cost in zip(data_state, data_cost):
         # print("Cost computed using the network", calculate_cost(data, trained_state, trained_state.params))
         # print("True cost", cost)
@@ -246,8 +251,18 @@ def test_model(trained_state, data_loader, batch_size):
         bounds = (lower_bounds, upper_bounds)
         lbfgsb_sol = lbfgsb.run(w_init, bounds=bounds, data=(data[:3], cost)).params
         jax_sol.append(lbfgsb_sol)"""
-        GD = LBFGS(calculate_cost)
-        solution.append(GD.run(data[3:], data[0:3], data[-3:], trained_state, trained_state.params))
+        A = np.zeros((6, 18))
+        A[0, 0] = 1
+        A[1, 1] = 1
+        A[2, 2] = 1
+        A[-3, -3] = 1
+        A[-2, -2] = 1
+        A[-1, -1] = 1
+        b = np.append(data[:3], data[-3:])
+        PGD = ProjectedGradient(calc_cost_GD, projection_affine_set)
+        solution.append(PGD.run(data, hyperparams_proj=(A, b)))
+        #GD = LBFGS(calculate_cost)
+        #solution.append(GD.run(data[3:], data[0:3], data[-3:], trained_state, trained_state.params))
         # solution.append(minimize(calculate_cost, data[3:], args=(data[0:3], data[-3:], trained_state, trained_state.params), method="BFGS"))
         # solution.append(ScipyMinimize(calculate_cost, method="BFGS", data[3:], data[0:3], data[-3:], trained_state, trained_state.params))
         orig.append(data)

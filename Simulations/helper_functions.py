@@ -72,7 +72,7 @@ def compute_tracking_cost(ref_traj, actual_traj, rdot_traj, Kp, N, horizon, rho=
             # print("Cost", np.linalg.norm(actual_traj[j:j + N, :2] - ref_traj[j:j + N, :2], axis=1) ** 2 +
              # angle_wrap(actual_traj[j:j + N, 2] - ref_traj[j:j + N, 2]) ** 2)
             xcost.append(rho * (np.linalg.norm(act[j:j + N, :2] - r0[j:j + N, :2], axis=1) ** 2 +
-             angle_wrap(act[j:j + N, 2] - r0[j:j + N, 2]) ** 2) + 0.0001 * np.linalg.norm(input_traj[i]))
+             angle_wrap(act[j:j + N, 2] - r0[j:j + N, 2]) ** 2) + np.linalg.norm(input_traj[i]) ** 2)
     print(len(xcost))
     # xcost = [np.linalg.norm(actual_traj[i:i + N, :2] - ref_traj[i:i + N, :2], axis=1) ** 2 +
     #         angle_wrap(actual_traj[i:i + N, 2] - ref_traj[i:i + N, 2]) ** 2 for i in range(len(ref_traj) - N)]
@@ -81,7 +81,7 @@ def compute_tracking_cost(ref_traj, actual_traj, rdot_traj, Kp, N, horizon, rho=
     cost = []
     for i in range(len(ref_traj) - N):
         tot = list(accumulate(xcost[i], lambda x, y: x * gamma + y))
-        cost.append(tot[-1])
+        cost.append(np.log(tot[-1]))
     cost.reverse()
     return np.vstack(cost), np.vstack(input_traj)
 

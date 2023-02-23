@@ -166,7 +166,7 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
     :return: xtraj, rtraj, rdottraj, costs
     """
 
-    horizon = 100
+    horizon = 10
     dt = 0.01
 
     xtraj = []
@@ -233,18 +233,18 @@ def gen_uni_training_data(lqr_obj, num_iter, state_dim, inp_dim, goals=None, ini
 
             print(tk_cost)
 
-            """# Generate polynomial trajectory with an order
-            r_poly = generate_polynomial_trajectory(inits[j, :], goals[j, :], horizon + 1, 3)
-            # r_poly = np.append(r_poly)
-            # r_poly = np.reshape(r_poly, (horizon+1, 3), order='F')
-            # print(r_poly)
-            rtraj.append(r_poly)
-            c, true_x = forward_simulate(inits[j, :], r_poly, horizon + 1)
-            xtraj.append(true_x)
-            rdottraj.append(compute_rdot(r_poly, dt))
-            tk_cost = np.linalg.norm(true_x - r_poly)
+        # Generate polynomial trajectory with an order
+        r_poly = generate_polynomial_trajectory(inits[j, :], goals[j, :], horizon + 1, 3)
+        # r_poly = np.append(r_poly)
+        # r_poly = np.reshape(r_poly, (horizon+1, 3), order='F')
+        # print(r_poly)
+        rtraj.append(r_poly)
+        c, true_x = forward_simulate(inits[j, :], r_poly, horizon)
+        xtraj.append(true_x)
+        rdottraj.append(compute_rdot(r_poly, dt))
+        tk_cost = np.linalg.norm(true_x - r_poly)
 
-            print(tk_cost)"""
+        print(tk_cost)
 
     return xtraj, rtraj, rdottraj, costs
 
