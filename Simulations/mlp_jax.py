@@ -14,9 +14,7 @@ VERSION
     0.0
 """
 
-import flax
 from flax import linen as nn
-import torch
 
 
 class MLP(nn.Module):
@@ -33,4 +31,3 @@ class MLP(nn.Module):
             x = nn.elu(x)
         x = self.linear2(x)
         return x
-        #return x ** 2
