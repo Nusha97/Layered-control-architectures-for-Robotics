@@ -38,16 +38,7 @@ def riccati_recursion(A, B, Q, q, R, N):
     return P, p, c, K, M, v
 
 
-def layered_planning(x0, x, v, n, N, rho):
-
-    s = np.zeros((n * (N+1)))
-    # s[0::2] = np.linspace(x0[0], 0, N+1)
-    # s[1::2] = np.linspace(x0[1], 0, N+1)
-
-    # C(x) will be to have x_1 track a sinuisoidal trajectory s(omega * t)
-    t = np.arange(N+1)
-    omega = 0.5
-    s[0::2] = 2 * np.sin(omega * t)
+def layered_planning(x0, s, x, v, n, N, rho):
 
     r = cp.Variable(shape=(n * (N+1)))
 
@@ -75,7 +66,7 @@ def layered_planning(x0, x, v, n, N, rho):
     return z0
 
 
-def reference_tracking(A, B, Q, R, q, N, F, r, n, m, x0, lqr):
+def reference_tracking(A, B, Q, R, q, N, F, r, n, m, x0, s):
     # Riccati recursions
     P, p, c, K, M, v = riccati_recursion(A, B, Q, q, R, N)
 
@@ -101,21 +92,55 @@ def reference_tracking(A, B, Q, R, q, N, F, r, n, m, x0, lqr):
 
     x_lqr = z_lqr[:n, :] + r
 
-    plt.figure()
-    #plt.plot(z_lqr[0, :], z_lqr[1, :], label="ref tracking")
-    plt.plot(z_lqr[0, :]+r[0, :], label="admm")
-    #plt.plot(r[0, :], r[1, :], label="ref")
-    plt.plot(r[0, :], 'r--', label="reference")
-    plt.xlabel("time")
-    plt.ylabel("state")
-    plt.legend()
-    plt.show()
+    # plt.figure()
+    # #plt.plot(z_lqr[0, :], z_lqr[1, :], label="ref tracking")
+    # plt.plot(z_lqr[0, :]+r[0, :], label="admm")
+    # #plt.plot(r[0, :], r[1, :], label="ref")
+    # plt.plot(r[0, :], 'r--', label="reference")
+    # plt.xlabel("time")
+    # plt.ylabel("state")
+    # plt.legend()
+    # plt.show()
 
-    return P, p, c, x_lqr, u_lqr
+    # plt.figure()
+    # plt.plot(s[0::2], s[1::2], linestyle="solid", linewidth=4)
+    # plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
+    # plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="dashed", linewidth=4)
+    # plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
+    # plt.title("State evolution from admm")
+    # plt.xlabel("state 1")
+    # plt.ylabel("state 2")
+    # plt.show()
+
+    return P, p, c, x_lqr, u_lqr, K, v
+
+
+def rollout(s, K, v, A, B, N, n, m, r):
+    z_lqr = np.zeros([n * (N + 2), N + 1])
+    u_lqr = np.zeros([m, N])
+    x_lqr = np.zeros([n, N + 1])
+
+    for i in range(N+1):
+        z_lqr[:n, i] = x_lqr[:, i] - r[:, i]
+        z_lqr[n:(N-i+n)*n, i] = r[:, i:].ravel(order='F')
+
+    for i in range(N):
+        u_lqr[:, i] = -K[N-i-1] @ z_lqr[:, i] - v[N-i-1]
+        z_lqr[:, i+1] = A @ z_lqr[:, i] + B @ u_lqr[:, i]
+
+    plt.figure()
+    plt.plot(s[0::2], s[1::2], linestyle="solid", linewidth=4)
+    plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
+    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="dashed", linewidth=4)
+    plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
+    plt.title("State evolution from admm")
+    plt.xlabel("state 1")
+    plt.ylabel("state 2")
+    plt.show()
 
 
 def main():
-    N = 12  # horizon
+    N = 20  # horizon
 
     n = 2  # state dim
     m = 2  # input dim
@@ -128,6 +153,13 @@ def main():
     B = np.zeros((n,m))
     B[-m:,:] = np.eye(m)
     print(B)
+
+    # C(x) will be to have x_1 track a sinuisoidal trajectory s(omega * t)
+    s = np.zeros((n * (N + 1)))
+    t = np.arange(N + 1)
+    omega = 0.5
+    s[0::2] = 2 * np.sin(omega * t)
+    s[1::2] = 2 * np.cos(omega * t)
 
     # Cost weight matrix for lqr
     Q = np.array([[10, 0], [0, 1]])
@@ -173,14 +205,14 @@ def main():
     print(is_pos_def(Q_bar_list[N]))
 
     # Riccati recursions
-    P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
+    # P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
 
     # Solve for the reference trajectory using the cost
-    z0 = layered_planning(x0, np.zeros((n, N + 1)), np.zeros((n, N + 1)), n, N, rho)
+    z0 = layered_planning(x0, s, np.zeros((n, N + 1)), np.zeros((n, N + 1)), n, N, rho)
     r = np.reshape(z0[n:], (n, N + 1), order='F')
 
     # Solve for the reference tracking problem
-    P, p, c, x, u = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, r, n, m, x0, False)
+    P, p, c, x, u, K, v = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, r, n, m, x0, s)
 
     # Run this iteratively with ADMM
     vk = np.zeros((n, N + 1))
@@ -193,19 +225,19 @@ def main():
 
     err = 100
 
-    while err >= 1:
-
+    # while err >= 1:
+    for k in range(20):
         # Solve the planning problem
         # import pdb; pdb.set_trace()
-        P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
-        z0_k = layered_planning(x0, xk, vk, n, N, rhok.value)
+        # P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
+        z0_k = layered_planning(x0, s, xk, vk, n, N, rhok.value)
 
         # Planned reference reshaped
         rk = np.reshape(z0_k[n:], (n, N + 1), order='F')
         print("ref rk", rk)
 
         # Solve the tracking problem
-        P, p, c, x, u = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, rk, n, m, x0, False)
+        P, p, c, x, u, K, v = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, rk, n, m, x0, s)
 
         sxk = rhok.value * (xk - x).flatten()
         suk = rhok.value * (uk - u).flatten()
@@ -241,6 +273,8 @@ def main():
         residual = rk - xk
         err = np.trace(residual.T @ residual)
         print("Residual", err)
+
+    rollout(s, K, v, A_bar, B_bar, N, n, m, rk)
 
 
 if __name__ == '__main__':

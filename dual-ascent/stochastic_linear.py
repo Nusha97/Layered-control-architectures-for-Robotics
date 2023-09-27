@@ -1,5 +1,5 @@
 """
-    ADMM for a linear system with disturbances
+ADMM for a linear system with disturbances
 """
 
 import numpy as np
@@ -7,174 +7,271 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 
 
-def open_loop(n, m, T, x0, s, q, A, B, H, R, w):
-    ## CVXPY baseline solution
+def is_pos_def(x):
+        # Check if matrix is psd
+        return np.all(np.linalg.eigvals(x) >= 0)
 
-    x_opt = cp.Variable((n, T))
-    u_opt = cp.Variable((m, T - 1))
 
-    # err  = x_opt[0,:] - s
-    err = x_opt - np.vstack([s, q])
-    utility_cost = cp.sum_squares(err)
-    ctrl_cost = cp.sum([cp.quad_form(u_opt[:, t], R) for t in np.arange(T - 1)])
+def riccati_recursion(A, B, Q, q, R, N):
 
-    dynamics_constraints = [x_opt[:, 0] == x0]
+    P = [None] * (N+1)
+    p = [None] * (N+1)
+    K = [None] * N
+    M = [None] * N
+    c = [None] * (N+1)
+    v = [None] * N
 
-    for t in np.arange(T - 1):
-        dynamics_constraints.append(x_opt[:, t + 1] == A @ x_opt[:, t] + B @ u_opt[:, t] + H @ w[:, t])
+    P[N] = Q[N]
+    p[N] = q[N]
+    c[N] = q[N+1]
 
-    prob = cp.Problem(cp.Minimize(utility_cost + ctrl_cost), dynamics_constraints)
+    for t in range(N-1, -1, -1):
+
+        K[t] = np.linalg.inv(B.T @ P[t+1] @ B + R) @ B.T @ P[t+1] @ A
+        v[t] = np.linalg.inv(B.T @ P[t+1] @ B + R) @ B.T @ p[t+1]
+        M[t] = K[t].T @ R @ np.linalg.inv(B.T @ P[t+1] @ B + R) @ B.T + (A - B @ K[t]).T @ (np.eye(A.shape[0]) - P[t+1] @ B @ np.linalg.inv(B.T @ P[t+1] @ B + R) @ B.T)
+        P[t] = Q[t] + A.T @ P[t+1] @ A - A.T @ P[t+1] @ B @ K[t]
+        p[t] = q[t] + K[t].T @ R @ v[t] + (A - B @ K[t]).T @ (p[t+1] - P[t+1] @ B @ v[t])
+        #c[t] = -p[t+1].T @ B @ np.linalg.inv(B.T @ P[t+1] @ B + R) @ B.T @ p[t+1] + c[t+1]
+        c[t] = -v[t].T @ (B.T @ P[t+1] @ B + R) @ v[t] - 2 * p[t+1].T @ B @ v[t] + c[t+1]
+
+    return P, p, c, K, M, v
+
+
+def layered_planning(x0, s, x, v, n, N, rho):
+
+    r = cp.Variable(shape=(n * (N+1)))
+
+    err = x.reshape(n*(N+1), order='F') - r + v.reshape(n*(N+1), order='F')
+
+    track_cost = (rho/2) * cp.sum_squares(err)
+
+
+    util_cost = cp.quad_form(r-s, np.eye(r.shape[0]))
+
+    obj = cp.Minimize(util_cost + track_cost)
+
+    constr = []
+    constr.append(r[:n] == x0)
+
+    prob = cp.Problem(obj, constr)
     prob.solve()
-    print(prob.value)
+
+    z0 = np.append(x0 - r[:n].value, r.value)
 
     plt.figure()
-    # plt.plot(np.arange(T), s, linestyle="solid", linewidth=4)
-    plt.plot(s, q, linestyle="solid", linewidth=4)
-    plt.plot(x_opt.value[0, :], x_opt.value[1, :], linestyle="solid", linewidth=4)
-    plt.legend(["ref", "ocp"], loc="lower left")
-    plt.title("State evolution from optimal control with process noise")
-    plt.xlabel("state 1")
-    plt.ylabel("state 2")
-    plt.show()
+    plt.plot(z0[n::2], z0[n+1::2], label="layered ref")
+    plt.close()
+
+    return z0
 
 
-def admm(n, m, T, x0, s, q, A, B, H, R, w):
-    rho = 25
-    # Let's setup each suproblem as parameteric problems so we can call them in a loop
-    # r-subproblem
-    r = cp.Variable((n, T))
-    xk = cp.Parameter((n, T))
-    uk = cp.Parameter((m, T - 1))
-    vk = cp.Parameter((n, T))
-    rhok = cp.Parameter(nonneg=True)
+def reference_tracking(A, B, Q, R, q, N, F, r, n, m, x0):
+    # Riccati recursions
+    P, p, c, K, M, v = riccati_recursion(A, B, Q, q, R, N)
 
-    rhok.value = rho
-    xk.value = np.zeros((n, T))
-    uk.value = np.zeros((m, T - 1))
-    vk.value = np.zeros((n, T))
+    # Defining augmented state as [err, ref]
+    print("reference", r)
+    z0 = np.append(x0 - r[:, 0], r.ravel(order='F'))
 
-    # err = r[0,:] - s
-    err = r - np.vstack([s, q])
-    utility_cost = cp.sum_squares(err)
-    admm_cost = rhok * cp.sum_squares(r - xk + vk)
+    # Compute the trajectory
+    u_lqr = np.zeros([m, N])
+    x_lqr = np.zeros([n, N+1])
+    z_lqr = np.zeros([n * (N+2), N+1])
 
-    r_subprob = cp.Problem(cp.Minimize(utility_cost + admm_cost), [r[:, 0] == x0])
+    x_lqr[:, 0] = x0
 
-    # (x,u) subproblem
+    for i in range(N+1):
+        z_lqr[:n, i] = x_lqr[:, i] - r[:, i]
+        z_lqr[n:(N-i+n)*n, i] = r[:, i:].ravel(order='F')
 
-    rk = cp.Parameter((n, T))
-    rk.value = np.zeros((n, T))
-    rk.value[0, :] = s
-    x = cp.Variable((n, T))
-    u = cp.Variable((m, T - 1))
-    vk = cp.Parameter((n, T))
-    vk.value = np.zeros((n, T))
-    rhok = cp.Parameter(nonneg=True)
-    rhok.value = rho
 
-    ctrl_cost = cp.sum([cp.quad_form(u[:, t], R) for t in np.arange(T - 1)])
-    admm_cost = rhok * cp.sum_squares(rk - x + vk)
+    for i in range(N):
+        u_lqr[:, i] = -K[N-i-1] @ z_lqr[:, i] - v[N-i-1]
+        z_lqr[:, i+1] = A @ z_lqr[:, i] + B @ u_lqr[:, i]
 
-    dynamics_constraints = [x[:, 0] == x0]
+    x_lqr = z_lqr[:n, :] + r
 
-    for t in np.arange(T - 1):
-        dynamics_constraints.append(x[:, t + 1] == A @ x[:, t] + B @ u[:, t] + H @ w[:, t])
+    # plt.figure()
+    # #plt.plot(z_lqr[0, :], z_lqr[1, :], label="ref tracking")
+    # plt.plot(z_lqr[0, :]+r[0, :], label="admm")
+    # #plt.plot(r[0, :], r[1, :], label="ref")
+    # plt.plot(r[0, :], 'r--', label="reference")
+    # plt.xlabel("time")
+    # plt.ylabel("state")
+    # plt.legend()
+    # plt.show()
 
-    xu_subprob = cp.Problem(cp.Minimize(ctrl_cost + admm_cost), dynamics_constraints)
+    return P, p, c, x_lqr, u_lqr, K, v
 
-    # run ADMM algorithms
-    K = 100
-    res = []
-    des = []
 
-    xk.value = np.zeros((n, T))
-    uk.value = np.zeros((m, T - 1))
-    vk.value = np.zeros((n, T))
-    rhok.value = 50
+def rollout(s, K, v, A, B, H, w, N, n, m, r):
+    z_lqr = np.zeros([n * (N + 2), N + 1])
+    u_lqr = np.zeros([m, N])
+    x_lqr = np.zeros([n, N + 1])
 
-    for k in np.arange(K):
-        # update r
-        r_subprob.solve()
-        # print("Is DPP? ", r_suprob.is_dcp(dpp=True))
+    for i in range(N+1):
+        z_lqr[:n, i] = x_lqr[:, i] - r[:, i]
+        z_lqr[n:(N-i+n)*n, i] = r[:, i:].ravel(order='F')
 
-        # update x u
-        rk.value = r.value
-        xu_subprob.solve()
-        # print("Is DPP? ", xu_subprob.is_dcp(dpp=True))
-
-        # compute residuals
-        sxk = rhok.value * (xk.value - x.value).flatten()
-        suk = rhok.value * (uk.value - u.value).flatten()
-        dual_res_norm = np.linalg.norm(np.hstack([sxk, suk]))
-        pr_res_norm = np.linalg.norm(rk.value - xk.value)
-
-        # update rhok and rescale vk
-        if pr_res_norm > 10 * dual_res_norm:
-            rhok.value = 2 * rhok.value
-            vk.value = vk.value / 2
-        elif dual_res_norm > 10 * pr_res_norm:
-            rhok.value = rhok.value / 2
-            vk.value = vk.value * 2
-
-        # update v
-        xk.value = x.value
-        uk.value = u.value
-        vk.value = vk.value + rk.value - xk.value
-        residual = np.vstack([s, q]) - xk.value
-        des.append(np.trace(residual.T @ residual))
-        residual = rk.value - xk.value
-        res.append(np.trace(residual.T @ residual))
+    for i in range(N):
+        u_lqr[:, i] = -K[N-i-1] @ z_lqr[:, i] - v[N-i-1]
+        z_lqr[:, i+1] = A @ z_lqr[:, i] + B @ u_lqr[:, i] + H @ w[:, i]
 
     plt.figure()
-    plt.plot(s, q, linestyle="solid", linewidth=4)
-    plt.plot(r.value[0, :], r.value[1, :], linestyle="solid", linewidth=4)
-    plt.plot(x.value[0, :], x.value[1, :], linestyle="dashed", linewidth=4)
+    plt.plot(s[0::2], s[1::2], linestyle="dashed", linewidth=4)
+    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="solid", linewidth=4)
+    plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
     plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
-    plt.title("State evolution from admm")
+    plt.title("State evolution from admm with process noise")
     plt.xlabel("state 1")
     plt.ylabel("state 2")
     plt.show()
 
 
 def main():
-    # Set up problem parameters
-    n = 2
-    m = 2
-    T = 20
+    N = 20  # horizon
 
-    # n-dim chain of integrators
-    A = np.diag(np.ones(n)) + np.diag(np.ones(n - 1), 1)
-
-    # actuators enter through the bottom of the chain
-    B = np.zeros((n, m))
-    B[-m:, :] = np.eye(m)
-
-    # Noise matrix
-    H = np.eye(n)
-
-    # Disturbances
-    np.random.seed(100)
-    rng = np.random.default_rng()
-    w = rng.standard_normal((n, T))
+    n = 2  # state dim
+    m = 2  # input dim
 
     # C(x) will be to have x_1 track a sinuisoidal trajectory s(omega * t)
-    t = np.arange(T)
+    s = np.zeros((n * (N+1)))
+    t = np.arange(N + 1)
     omega = 0.5
-    s = 0.5 * np.sin(omega * t)
-    q = 0.5 * np.cos(omega * t)
+    s[0::2] = 2 * np.sin(omega * t)
+    s[1::2] = 2 * np.cos(omega * t)
 
-    # tracking costs
-    Q = np.eye(n)
-    R = 0.1 * np.eye(m)
+    # n-dim chain of integrators
+    A = np.diag(np.ones(n)) + np.diag(np.ones(n-1),1)
+    print(A)
 
-    # initial condition is x0 = 0
-    x0 = np.zeros(n)
+    # actuators enter through the bottom of the chain
+    B = np.zeros((n,m))
+    B[-m:,:] = np.eye(m)
+    print(B)
 
-    # Baseline open loop
-    open_loop(n, m, T, x0, s, q, A, B, H, R, w)
+    # Noise matrix
+    H = 0.1 * np.eye(n)
 
-    # ADMM
-    admm(n, m, T, x0, s, q, A, B, H, R, w)
+    # Cost weight matrix for lqr
+    Q = np.array([[10, 0], [0, 1]])
+
+    Q_list = [Q for i in range(N+1)]
+    R = 0.001 * np.eye(m)
+    q = np.ones(2)
+    q_list = [q for i in range(N+1)]
+    q_list.append(0)
+
+    x0 = np.array([0, 0])  # initial state
+    np.random.seed(100)
+    rng = np.random.default_rng()
+    w = rng.standard_normal((n, N + 1))
+
+    # Define matrix F s.t. e = Fz
+    F = np.hstack([np.eye(n), np.zeros([n, n * (N + 1)])])
+
+    # TODO: How to set the optimal mu value?
+    mu = np.zeros((n, N + 1))
+
+    rho = 1
+
+    # Matrices for z-dimensions
+    E1 = np.vstack([np.eye(n), np.zeros([n * N, n])])
+    E2 = np.vstack([np.zeros([n, n]), np.eye(n), np.zeros([n * (N - 1), n])])
+    Z = np.eye(n * (N + 1), n * (N + 1), 1)
+
+    # Initialize the cost weight matrix
+    Q_bar = np.block(
+        [[rho / 2 * Q, np.zeros([n, (N + 1) * n])], [np.zeros([(N + 1) * n, n]), np.zeros([(N + 1) * n, (N + 1) * n])]])
+
+    # Dynamics for z
+    A_bar = np.block([[A, E2.T - A @ E1.T], [np.zeros([n * (N + 1), n]), Z]])
+    B_bar = np.vstack([B, np.zeros([n * (N + 1), m])])
+    H_bar = np.vstack([H, np.zeros([n * (N + 1), n])])
+
+    # According to layering notes, q = F.T @ mu
+    q_list = []
+    for i in range(N + 1):
+        q_list.append(rho * F.T @ mu[:, i])
+    q_list.append(0)
+
+    # Defining the same cost Q_bar for all time steps
+    Q_bar_list = []
+    Q_bar_list = [Q_bar for i in range(N + 1)]
+    print(is_pos_def(Q_bar_list[N]))
+
+    # Riccati recursions
+    P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
+
+    # Solve for the reference trajectory using the cost
+    z0 = layered_planning(x0, s, np.zeros((n, N + 1)), np.zeros((n, N + 1)), n, N, rho)
+    r = np.reshape(z0[n:], (n, N + 1), order='F')
+
+    # Solve for the reference tracking problem
+    P, p, c, x, u, K, v = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, r, n, m, x0)
+
+    # Run this iteratively with ADMM
+    vk = np.zeros((n, N + 1))
+    rhok = cp.Parameter(nonneg=True)
+    rhok.value = rho
+
+    xk = np.zeros((n, N + 1))
+    xk = x
+    uk = np.zeros((m, N))
+
+    err = 100
+
+    # while err >= 1e-4:
+    for k in range(2):
+        # Solve the planning problem
+        # import pdb; pdb.set_trace()
+        # P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
+        z0_k = layered_planning(x0, s, xk, vk, n, N, rhok.value)
+
+        # Planned reference reshaped
+        rk = np.reshape(z0_k[n:], (n, N + 1), order='F')
+        print("ref rk", rk)
+
+        # Solve the tracking problem
+        P, p, c, x, u, K, v = reference_tracking(A_bar, B_bar, Q_bar_list, R, q_list, N, F, rk, n, m, x0)
+
+        sxk = rhok.value * (xk - x).flatten()
+        suk = rhok.value * (uk - u).flatten()
+
+        dual_res_norm = np.linalg.norm(np.hstack([sxk, suk]))
+        p_res_norm = np.linalg.norm(rk - xk)
+
+        # update rhok and rescale vk
+        if p_res_norm > 10 * dual_res_norm:
+            rhok.value = 2 * rhok.value
+            vk = vk / 2
+        elif dual_res_norm > 10 * p_res_norm:
+            rhok.value = rhok.value / 2
+            vk = vk * 2
+
+        # update v
+        xk = x
+        uk = u
+        vk = vk + xk - rk
+        print("Vk", vk)
+
+        Q_bar_list = []
+        Q_bar_list = [(rhok.value / 2) * Q_bar for i in range(N + 1)]
+        # Q_bar_list = [Q_bar for i in range(N+1)]
+        print(is_pos_def(Q_bar_list[N]))
+
+        # According to layering notes, q = F.T @ mu
+        q_list = []
+        for i in range(N + 1):
+            q_list.append(rhok.value * F.T @ vk[:, i])
+        q_list.append(0)
+
+        residual = rk - xk
+        err = np.trace(residual.T @ residual)
+        print("Residual", err)
+
+    rollout(s, K, v, A_bar, B_bar, H_bar, w, N, n, m, rk)
 
 
 if __name__ == '__main__':
