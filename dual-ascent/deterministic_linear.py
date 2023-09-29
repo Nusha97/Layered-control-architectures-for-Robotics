@@ -129,9 +129,9 @@ def rollout(s, K, v, A, B, N, n, m, r):
         z_lqr[:, i+1] = A @ z_lqr[:, i] + B @ u_lqr[:, i]
 
     plt.figure()
-    plt.plot(s[0::2], s[1::2], linestyle="solid", linewidth=4)
+    plt.plot(s[0::2], s[1::2], linestyle="dashed", linewidth=4)
     plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
-    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="dashed", linewidth=4)
+    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="solid", linewidth=4)
     plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
     plt.title("State evolution from admm")
     plt.xlabel("state 1")
@@ -196,7 +196,7 @@ def main():
     # According to layering notes, q = F.T @ mu
     q_list = []
     for i in range(N + 1):
-        q_list.append(rho * F.T @ mu[:, i])
+        q_list.append((rho/2) * F.T @ mu[:, i])
     q_list.append(0)
 
     # Defining the same cost Q_bar for all time steps
@@ -267,7 +267,7 @@ def main():
         # According to layering notes, q = F.T @ mu
         q_list = []
         for i in range(N + 1):
-            q_list.append(rhok.value * F.T @ vk[:, i])
+            q_list.append((rhok.value/2) * F.T @ vk[:, i])
         q_list.append(0)
 
         residual = rk - xk

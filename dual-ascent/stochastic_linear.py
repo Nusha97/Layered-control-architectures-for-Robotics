@@ -120,8 +120,8 @@ def rollout(s, K, v, A, B, H, w, N, n, m, r):
 
     plt.figure()
     plt.plot(s[0::2], s[1::2], linestyle="dashed", linewidth=4)
-    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="solid", linewidth=4)
     plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
+    plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="solid", linewidth=4)
     plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
     plt.title("State evolution from admm with process noise")
     plt.xlabel("state 1")
@@ -174,7 +174,7 @@ def main():
     # TODO: How to set the optimal mu value?
     mu = np.zeros((n, N + 1))
 
-    rho = 1
+    rho = 10
 
     # Matrices for z-dimensions
     E1 = np.vstack([np.eye(n), np.zeros([n * N, n])])
@@ -193,7 +193,7 @@ def main():
     # According to layering notes, q = F.T @ mu
     q_list = []
     for i in range(N + 1):
-        q_list.append(rho * F.T @ mu[:, i])
+        q_list.append((rho/2) * F.T @ mu[:, i])
     q_list.append(0)
 
     # Defining the same cost Q_bar for all time steps
@@ -223,7 +223,7 @@ def main():
     err = 100
 
     # while err >= 1e-4:
-    for k in range(2):
+    for k in range(15):
         # Solve the planning problem
         # import pdb; pdb.set_trace()
         # P, p, c, K, M, v = riccati_recursion(A_bar, B_bar, Q_bar_list, q_list, R, N)
@@ -264,7 +264,7 @@ def main():
         # According to layering notes, q = F.T @ mu
         q_list = []
         for i in range(N + 1):
-            q_list.append(rhok.value * F.T @ vk[:, i])
+            q_list.append((rhok.value/2) * F.T @ vk[:, i])
         q_list.append(0)
 
         residual = rk - xk
