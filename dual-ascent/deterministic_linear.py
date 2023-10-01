@@ -132,10 +132,10 @@ def rollout(s, K, v, A, B, N, n, m, r):
     plt.plot(s[0::2], s[1::2], linestyle="dashed", linewidth=4)
     plt.plot(r[0, :], r[1, :], linestyle="solid", linewidth=4)
     plt.plot(z_lqr[0, :] + r[0, :], z_lqr[1, :] + r[1, :], linestyle="solid", linewidth=4)
-    plt.legend(["init_ref", "admm_ref", "admm_state"], loc="lower left")
-    plt.title("State evolution from admm")
-    plt.xlabel("state 1")
-    plt.ylabel("state 2")
+    plt.legend(["goal trajectory", "reference trajectory", "admm trajectory"], loc="lower left", fontsize=16)
+    plt.title("State evolution for OCP", fontsize=20)
+    plt.xlabel("state 1", fontsize=16)
+    plt.ylabel("state 2", fontsize=16)
     plt.show()
 
 
@@ -162,7 +162,7 @@ def main():
     s[1::2] = 2 * np.cos(omega * t)
 
     # Cost weight matrix for lqr
-    Q = np.array([[10, 0], [0, 1]])
+    Q = np.array([[1, 0], [0, 1]])
 
     Q_list = [Q for i in range(N+1)]
     R = 0.001 * np.eye(m)
