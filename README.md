@@ -1,7 +1,7 @@
 # Layered Control Architectures for Robotics
 
-To install the required libraries run <pip install -r requirements.txt>
-Once the required libraries are installed, to run the full pipeline use <python run_exp.py>
+To install the required libraries run "pip install -r requirements.txt"
+Once the required libraries are installed, to run the full pipeline use "python run_exp.py"
 
 To use JAX with the GPU, please follow instructions from the official page linked below to install the right version of JAX. 
 https://jax.readthedocs.io/en/latest/installation.html
