@@ -19,7 +19,7 @@ Simulations/
 * Testing_mlp.ipynb - Contains an example for generating trajectories for the unicycle system and visualizing them
 
 To generate data, please take a look at how to call the functions as shown in the Testing_mlp.ipynb notebook. The generated data is
-saved to the data/ folder. 
+saved to the data/ folder. All codes from the PyTorch implementation are in the tracking/ folder.
 
 
 
